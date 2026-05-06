@@ -3,6 +3,7 @@ package com.example.calendar.viewmodel
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import java.time.LocalDate
 import java.time.YearMonth
 
 class CalendarViewModel : ViewModel() {
@@ -20,5 +21,31 @@ class CalendarViewModel : ViewModel() {
     // 「次の月」ボタンが押された時の処理
     fun onNextMonth() {
         _currentMonth.value = _currentMonth.value.plusMonths(1)
+    }
+    private val _selectedDate = mutableStateOf(LocalDate.now())
+    val selectedDate: State<LocalDate> = _selectedDate
+
+    // ★追加：日付がクリックされた時の処理
+    fun onDateSelected(date: LocalDate) {
+        _selectedDate.value = date
+    }
+
+    private val _showDatePicker = mutableStateOf(false)
+    val showDatePicker: State<Boolean> = _showDatePicker
+
+    // 年月表示が押されたとき
+    fun onMonthYearPickerClick() {
+        _showDatePicker.value = true
+    }
+
+    // ダイアログを閉じる
+    fun dismissDatePicker() {
+        _showDatePicker.value = false
+    }
+
+    // 年月を更新する
+    fun updateYearMonth(year: Int, month: Int) {
+        _currentMonth.value = YearMonth.of(year, month)
+        _showDatePicker.value = false
     }
 }

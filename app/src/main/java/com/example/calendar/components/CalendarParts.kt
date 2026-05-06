@@ -10,19 +10,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.YearMonth
 
 @Composable
-fun DateCell(date: LocalDate?, isToday: Boolean, onClick: () -> Unit) {
+fun DateCell(
+    date: LocalDate?,
+    isToday: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
     Box(
         modifier = Modifier
-            .aspectRatio(0.8f) // 少し縦長にしてタスク表示スペースを確保
-            .border(0.2.dp, Color.LightGray)
+            .aspectRatio(0.55f) // ★さらに数値を下げて、縦にひょろ長いマスにする
+            .border(
+                width = if (isToday) 2.dp else 0.5.dp,
+                color = if (isToday) Color.Blue else Color.LightGray
+            )
             .clickable(enabled = date != null) { onClick() }
-            .background(if (isToday) MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
+            .background(
+                if (isSelected) Color(0xFFD1E4FF) // ★ご要望通り、薄い青のまま
+                else Color.White
+            ),
         contentAlignment = Alignment.TopCenter
     ) {
         if (date != null) {
@@ -33,11 +45,12 @@ fun DateCell(date: LocalDate?, isToday: Boolean, onClick: () -> Unit) {
                 Text(
                     text = date.dayOfMonth.toString(),
                     fontSize = 14.sp,
-                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                    color = when(date.dayOfWeek.value) {
-                        7 -> Color.Red // 日曜日
-                        6 -> Color.Blue // 土曜日
-                        else -> MaterialTheme.colorScheme.onSurface
+                    fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                    // ★文字色は白に変えず、黒系（曜日ごとの色）を維持
+                    color = when {
+                        date.dayOfWeek.value == 7 -> Color.Red
+                        date.dayOfWeek.value == 6 -> Color.Blue
+                        else -> Color.Black
                     }
                 )
             }
@@ -55,4 +68,32 @@ fun buildMonthDates(yearMonth: YearMonth): List<LocalDate?> {
     }
     while (dates.size % 7 != 0) { dates.add(null) }
     return dates
+}
+
+@Composable
+fun DayOfWeekRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF8F8F8)) // ほんのりグレーの背景でヘッダー感を出す
+            .border(0.5.dp, Color.LightGray) // 下線の代わり
+    ) {
+        val daysOfWeek = listOf("日", "月", "火", "水", "木", "金", "土")
+        daysOfWeek.forEach { day ->
+            Text(
+                text = day,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 12.dp), // 少し縦長にするために余白を増やす
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = when (day) {
+                    "日" -> Color.Red
+                    "土" -> Color.Blue
+                    else -> Color.DarkGray
+                }
+            )
+        }
+    }
 }
