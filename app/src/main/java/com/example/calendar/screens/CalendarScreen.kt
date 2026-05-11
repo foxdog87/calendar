@@ -50,7 +50,6 @@ fun CalendarScreen(viewModel: CalendarViewModel = viewModel()) {
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-        // navigationBarsPaddingはここでは外します（下のRowの中で処理するため）
     ) {
         // --- トップバー部分（年月表示のすぐ右に上下ボタンを一直線に配置） ---
         Row(
