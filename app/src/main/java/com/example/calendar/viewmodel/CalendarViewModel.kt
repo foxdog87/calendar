@@ -67,23 +67,24 @@ class CalendarViewModel : ViewModel() {
      * 手動入力 (Manual) でタスクを保存する
      */
     fun saveManualTask() {
-        // 現在の inputState (下書き) を Task エンティティに変換
         val newTask = Task(
             title = inputState.title,
             date = inputState.date,
             startTime = inputState.startTime,
             endTime = inputState.endTime,
-            color = inputState.color ?: 0xFF000000.toInt(), // nullなら黒(0xFF000000)
-            memo = inputState.memo.takeIf { it.isNotBlank() }, // 空文字ならnullとして扱う
+            color = inputState.color ?: 0xFF000000.toInt(),
+            memo = inputState.memo.takeIf { it.isNotBlank() },
+            location = inputState.location.takeIf { it.isNotBlank() },
+            url = inputState.url.takeIf { it.isNotBlank() },
+            checkList = inputState.checkList.takeIf { it.isNotBlank() },
+            attachmentPath = inputState.attachmentPath,
             dayCountTarget = inputState.dayCountTarget,
-            completeState = "NOT_COMPLETED"
+            completeState = "NOT_COMPLETED",
+            autoCompleted = false // ER図にある boolean 項目
         )
-        
-        // リストに追加（将来的にここがDB保存に変わる）
+
         _tasks.add(newTask)
-        
-        // 保存が終わったら下書きをリセットして次の入力に備える
-        inputState = TaskInputState()
+        inputState = TaskInputState() // 下書きリセット
     }
 
 }
