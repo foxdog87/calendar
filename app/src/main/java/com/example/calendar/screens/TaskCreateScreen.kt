@@ -77,24 +77,55 @@ fun TaskCreateScreen(viewModel: CalendarViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 5. メモ入力欄
+// 5. メモ入力欄
         TextField(
             value = taskState.memo,
-            onValueChange = { newMemo ->
-                viewModel.updateInput { it.copy(memo = newMemo) }
-            },
+            onValueChange = { text -> viewModel.updateInput { it.copy(memo = text) } },
             label = { Text("メモ（任意）") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2
         )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // --- タグ選択UI（チップの並び） ---
+        Text(text = "タグを選択", style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Start))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            sampleTags.forEach { tag ->
+                val isSelected = taskState.selectedTags.contains(tag)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { viewModel.toggleTagSelection(tag) },
+                    label = { Text(tag.name) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        val activeLabels = taskState.selectedTags
+            .mapNotNull { it.customFieldLabel }
+            .distinct()
+
+        activeLabels.forEach { label ->
+            val currentInputValue = taskState.customFieldValues[label] ?: ""
+            TextField(
+                value = currentInputValue,
+                onValueChange = { newText -> viewModel.updateCustomFieldValue(label, newText) },
+                label = { Text(label) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
         // 6. 保存ボタン
         Button(
-            onClick = {
-                viewModel.saveManualTask()
-            },
+            onClick = { viewModel.saveManualTask() },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("保存する")

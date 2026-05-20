@@ -84,6 +84,40 @@ class CalendarViewModel : ViewModel() {
         
         // 保存が終わったら下書きをリセットして次の入力に備える
         inputState = TaskInputState()
+    fun toggleTagSelection(tag: Tag) {
+        updateInput { currentState ->
+            val isSelected = currentState.selectedTags.contains(tag)
+            val newTags = if (isSelected) {
+                currentState.selectedTags - tag // 選択解除
+            } else {
+                currentState.selectedTags + tag // 新規選択
+            }
+
+            // タグが解除されたら、そのタグが持っていたカスタム入力欄のデータもMapから消去する
+            val newValues = currentState.customFieldValues.toMutableMap()
+            if (isSelected && tag.customFieldLabel != null) {
+                newValues.remove(tag.customFieldLabel)
+            }
+
+            currentState.copy(
+                selectedTags = newTags,
+                customFieldValues = newValues
+            )
+        }
+    }
+
+    /**
+     * 動的入力欄の文字が書き換わったときに呼び出される関数
+     * @param label 入力欄のタイトル（例：「責任者」）
+     * @param value 入力された文字（例：「山田太郎」）
+     */
+    fun updateCustomFieldValue(label: String, value: String) {
+        updateInput { currentState ->
+            val newValues = currentState.customFieldValues.toMutableMap()
+            newValues[label] = value // Mapの中身を更新、または新規追加
+            currentState.copy(customFieldValues = newValues)
+        }
+    }
     }
 
 }
