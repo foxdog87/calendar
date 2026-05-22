@@ -16,6 +16,7 @@ data class TaskInputState(
     val checkList: String = "",
     val dayCountTarget: LocalDate? = null,
     val attachmentPath: String? = null,
+    val isAutoCompleted:Boolean = false
     // 複数選択を視野に入れて、選択されたタグをリスト保持に変更
     val selectedTags: List<Tag> = emptyList(), 
     // ★修正：[ カスタム項目の名前 (String) -> ユーザーの入力値 (String) ] のペアで保持

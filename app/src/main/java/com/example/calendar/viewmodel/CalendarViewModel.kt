@@ -76,6 +76,7 @@ class CalendarViewModel : ViewModel() {
             color = inputState.color ?: 0xFF000000.toInt(), // nullなら黒(0xFF000000)
             memo = inputState.memo.takeIf { it.isNotBlank() }, // 空文字ならnullとして扱う
             dayCountTarget = inputState.dayCountTarget,
+            isAutoCompleted = inputState.isAutoCompleted,
             completeState = "NOT_COMPLETED"
         )
         
