@@ -58,18 +58,6 @@ fun DateCell(
     }
 }
 
-fun buildMonthDates(yearMonth: YearMonth): List<LocalDate?> {
-    val dates = mutableListOf<LocalDate?>()
-    val firstDay = yearMonth.atDay(1)
-    val firstDayOfWeek = firstDay.dayOfWeek.value % 7
-    repeat(firstDayOfWeek) { dates.add(null) }
-    for (day in 1..yearMonth.lengthOfMonth()) {
-        dates.add(yearMonth.atDay(day))
-    }
-    while (dates.size % 7 != 0) { dates.add(null) }
-    return dates
-}
-
 @Composable
 fun DayOfWeekRow() {
     Row(

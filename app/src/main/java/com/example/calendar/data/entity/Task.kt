@@ -5,7 +5,7 @@ import java.time.LocalTime
 import java.util.UUID
 
 data class Task(
-    val taskId: String = UUID.randomUUID().toString(),
+    val taskId: Int = 0,
     val templateId: Int? = null,
     val title: String,
     val date: LocalDate,
