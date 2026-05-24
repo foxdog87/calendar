@@ -5,7 +5,7 @@ package com.example.calendar.data.entity
  */
 data class Tag(
     val tagId: Int = 0,         // PK
-    val name: String,           // タグ名（例：「プロジェクトA」）
+    val name: String,          
     val icon: String? = null,
     val color: Int,
 )
