@@ -28,6 +28,7 @@ import com.example.calendar.components.DayOfWeekRow
 import com.example.calendar.viewmodel.CalendarViewModel // ViewModelをインポート
 import java.time.LocalDate
 
+@OptIn(ExperimentalMaterial3Api::class) // ★CenterAlignedTopAppBar の採用に伴い公式に付与
 @Composable
 fun CalendarScreen(viewModel: CalendarViewModel) {
     var currentScreenMode by remember { mutableStateOf("CALENDAR") }
@@ -65,56 +66,55 @@ fun CalendarScreen(viewModel: CalendarViewModel) {
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            // --- トップバー部分（年月表示のすぐ右に上下ボタンを一直線に配置） ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 1. メニューアイコン（左端）
-                IconButton(onClick = { /* TODO: メニュー */ }) {
-                    Icon(Icons.Default.Menu, contentDescription = "メニュー")
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // 2. 年月表示とボタンのセット
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 年月
-                    TextButton(
-                        onClick = { viewModel.onMonthYearPickerClick() },
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        Text(
-                            text = "${currentMonth.year}年 ${currentMonth.monthValue}月",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
-                        )
-                    }
-
-                    // ★ ここ：年月表示のすぐ右に、上下ボタンを垂直に配置
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(start = 4.dp)
-                    ) {
-                        IconButton(
-                            onClick = { viewModel.onNextMonth() }, // Upで翌月
-                            modifier = Modifier.size(28.dp) // 少しサイズ調整
+            // ==========================================
+            // ★変更：Rowの手動配置から CenterAlignedTopAppBar へアップグレード！
+            // ==========================================
+            CenterAlignedTopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 年月選択テキストボタン
+                        TextButton(
+                            onClick = { viewModel.onMonthYearPickerClick() },
+                            contentPadding = PaddingValues(horizontal = 4.dp)
                         ) {
-                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "翌月")
+                            Text(
+                                text = "${currentMonth.year}年 ${currentMonth.monthValue}月",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
                         }
-                        IconButton(
-                            onClick = { viewModel.onPreviousMonth() }, // Downで前月
-                            modifier = Modifier.size(28.dp)
+
+                        // 年月のすぐ右の上下ボタン
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(start = 4.dp)
                         ) {
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "前月")
+                            IconButton(
+                                onClick = { viewModel.onNextMonth() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "翌月")
+                            }
+                            IconButton(
+                                onClick = { viewModel.onPreviousMonth() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "前月")
+                            }
                         }
                     }
-                }
-            }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { /* TODO: メニュー */ }) {
+                        Icon(Icons.Default.Menu, contentDescription = "メニュー")
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Transparent // 元のRowと同じく背景に溶け込ませる
+                )
+            )
 
             // --- 曜日ヘッダー ---
             DayOfWeekRow()
@@ -132,11 +132,23 @@ fun CalendarScreen(viewModel: CalendarViewModel) {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(daysInMonth) { date ->
+                        // ==========================================
+                        // ★新設：この日付マス目に合致するタスクがあるかチェック
+                        // ==========================================
+                        val dayTasks = if (date != null) {
+                            viewModel.tasks.filter { task -> task.startTime.toLocalDate() == date }
+                        } else {
+                            emptyList()
+                        }
+
                         DateCell(
                             date = date,
                             isToday = date == LocalDate.now(),
-                            isSelected = date == selectedDate,
+                            // ★修正：selectedDate が LocalDateTime型 に昇格したため、.toLocalDate() で比較
+                            isSelected = date == selectedDate.toLocalDate(),
                             onClick = { if (date != null) viewModel.onDateSelected(date) }
+                            // ※注意：もし今後 DateCell 側でタスクをアスタリスクや点、文字で表示したい場合は、
+                            // 引数に「tasks = dayTasks」のようにデータを渡せるように拡張してください。
                         )
                     }
                 }

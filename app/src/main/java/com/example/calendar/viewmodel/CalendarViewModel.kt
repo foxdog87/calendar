@@ -9,42 +9,45 @@ import androidx.lifecycle.ViewModel
 import com.example.calendar.data.entity.Tag
 import com.example.calendar.data.entity.TagCustomField
 import com.example.calendar.data.entity.Task
-import com.example.calendar.data.entity.TaskTag       // ★理由2で追加
+import com.example.calendar.data.entity.TaskTag
 import com.example.calendar.state.TaskInputState
 import java.time.LocalDate
+import java.time.LocalDateTime // ★LocalDateTime を追加
 import java.time.YearMonth
 
+// ★余計な @JvmOverloads constructor は完全削除。
+// 「開始日時・終了日時」への設計変更に伴い、initialDate から initialDateTime (LocalDateTime型) に変更
 class CalendarViewModel(
     initialMonth: YearMonth = YearMonth.now(),
-    initialDate: LocalDate = LocalDate.now()
+    initialDateTime: LocalDateTime = LocalDateTime.now()
 ) : ViewModel() {
 
     // === 月選択・日付選択ロジック（渡された初期値を使用） ===
-    private val _currentMonth = mutableStateOf(initialMonth) // ★修正：実時間を直呼びせず初期値を使う
+    private val _currentMonth = mutableStateOf(initialMonth)
     val currentMonth: State<YearMonth> = _currentMonth
 
-    private val _selectedDate = mutableStateOf(initialDate)   // ★修正：実時間を直呼びせず初期値を使う
-    val selectedDate: State<LocalDate> = _selectedDate
+    // ★修正：下部に散らばっていた定義を最上部に集約。型を LocalDateTime に変更
+    private val _selectedDate = mutableStateOf(initialDateTime)
+    val selectedDate: State<LocalDateTime> = _selectedDate
+
+    private val _showDatePicker = mutableStateOf(false)
+    val showDatePicker: State<Boolean> = _showDatePicker
 
     fun buildCalendarMatrix(yearMonth: YearMonth, mode: String): List<LocalDate?> {
         return when (mode) {
             "WEEK" -> buildWeekCalendarMatrix(yearMonth)
             "DAY" -> buildDayCalendarMatrix(yearMonth)
             else -> {
-                // デフォルト（月単位）：元の buildMonthDates のロジックを100%継承
                 val dates = mutableListOf<LocalDate?>()
                 val firstDay = yearMonth.atDay(1)
 
-                // 1日の曜日を基準に、前月分の余白を null で埋める
                 val firstDayOfWeek = firstDay.dayOfWeek.value % 7
                 repeat(firstDayOfWeek) { dates.add(null) }
 
-                // 1日から末日までを追加
                 for (day in 1..yearMonth.lengthOfMonth()) {
                     dates.add(yearMonth.atDay(day))
                 }
 
-                // 7の倍数になるように、翌月分の余白を null で埋める
                 while (dates.size % 7 != 0) { dates.add(null) }
 
                 dates
@@ -53,12 +56,15 @@ class CalendarViewModel(
     }
 
     private fun buildWeekCalendarMatrix(yearMonth: YearMonth): List<LocalDate?> {
-        val startOfWeek = _selectedDate.value.minusDays(_selectedDate.value.dayOfWeek.value % 7 .toLong())
+        // ★修正：_selectedDate から .toLocalDate() で日付部分だけを取り出して計算
+        val localDate = _selectedDate.value.toLocalDate()
+        val startOfWeek = localDate.minusDays(localDate.dayOfWeek.value % 7 .toLong())
         return (0 until 7).map { startOfWeek.plusDays(it.toLong()) }
     }
 
     private fun buildDayCalendarMatrix(yearMonth: YearMonth): List<LocalDate?> {
-        return listOf(_selectedDate.value)
+        // ★修正：_selectedDate から .toLocalDate() で日付部分だけを取り出す
+        return listOf(_selectedDate.value.toLocalDate())
     }
 
     fun onPreviousMonth() {
@@ -69,13 +75,10 @@ class CalendarViewModel(
         _currentMonth.value = _currentMonth.value.plusMonths(1)
     }
 
-
+    // ★修正：日付が選択された時、現在の「時間情報」を壊さないように結合して保持
     fun onDateSelected(date: LocalDate) {
-        _selectedDate.value = date
+        _selectedDate.value = date.atTime(_selectedDate.value.toLocalTime())
     }
-
-    private val _showDatePicker = mutableStateOf(false)
-    val showDatePicker: State<Boolean> = _showDatePicker
 
     fun onMonthYearPickerClick() {
         _showDatePicker.value = true
@@ -132,32 +135,22 @@ class CalendarViewModel(
     }
 
     // === [完全維持] 2. 保存済みのリスト ===
+    // === 2. 保存済みのリスト（すべてのタスクデータはここに集約されます） ===
     private val _tasks = mutableStateListOf<Task>()
-    val tasks: List<Task> = _tasks
+    val tasks: List<Task> = _tasks // ★画面側からは、この tasks を直接見にいきます
 
-    // ==========================================
-    // ★設計変更（中間テーブル対応）による必要最小限の変更・追加
-    // ==========================================
-
-    // 理由2: タスクとタグの結びつき（多対多）を保存する中間テーブル用のリストを新設
     private val _taskTags = mutableStateListOf<TaskTag>()
     val taskTags: List<TaskTag> = _taskTags
 
-    // 理由2: 新しいタスクのIDを擬似的に自動採番するためのカウンター
     private var nextTaskId = 1
 
-    // --- 3. 保存処理の実装（改名・拡張） ---
-    /**
-     * ★修正：手動入力 (Manual) でタスクとタグの連関データを同時に保存する
-     */
-    // 理由1: プログラム一覧表の変更に合わせ、関数名を `saveManualTask` から `saveTask` に改名
+    // --- 3. 保存処理の実装 ---
     fun saveTask() {
-        val currentId = nextTaskId++ // 新しいTask用のIDを発行
+        val currentId = nextTaskId++
 
         val newTask = Task(
-            taskId = currentId, // ★理由2: 発行した固有IDをセット
+            taskId = currentId,
             title = inputState.title,
-            date = inputState.date,
             startTime = inputState.startTime,
             endTime = inputState.endTime,
             color = inputState.color ?: 0xFF000000.toInt(),
@@ -171,9 +164,8 @@ class CalendarViewModel(
             autoCompleted = false
         )
 
-        _tasks.add(newTask)
+        _tasks.add(newTask) // ViewModel内のリストに直接追加！
 
-        // ★理由2: 画面で選択されていたタグを、中間テーブル（TaskTag）の形式に変換して一括保存
         inputState.selectedTags.forEach { tag ->
             val linkedData = TaskTag(taskId = currentId, tagId = tag.tagId)
             _taskTags.add(linkedData)

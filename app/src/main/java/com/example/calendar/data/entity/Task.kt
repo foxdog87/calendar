@@ -1,23 +1,20 @@
 package com.example.calendar.data.entity
 
-import java.time.LocalDate
-import java.time.LocalTime
-import java.util.UUID
+import java.time.LocalDateTime // ★インポート
 
 data class Task(
-    val taskId: Int = 0,
-    val templateId: Int? = null,
+    val taskId: Int,
     val title: String,
-    val date: LocalDate,
-    val startTime: LocalTime?,
-    val endTime: LocalTime?,
+    // ★修正：日付＋時刻をセットで保持する構造へアップデート
+    val startTime: LocalDateTime,
+    val endTime: LocalDateTime,
     val color: Int,
     val memo: String? = null,
-    val checkList: String? = null,
     val location: String? = null,
-    val dayCountTarget: LocalDate? = null, // あなたが必要と判断した目標日
     val url: String? = null,
+    val checkList: String? = null,
     val attachmentPath: String? = null,
-    val autoCompleted: Boolean = false,
-    val completeState: String = "NOT_COMPLETED"
+    val dayCountTarget: Boolean = false,
+    val completeState: String = "NOT_COMPLETED",
+    val autoCompleted: Boolean = false
 )
