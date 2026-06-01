@@ -30,12 +30,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ==========================================
-// ★修正：新設計（LocalDateTime）に合わせて、プレビュー用のインスタンス生成を修正
-// ==========================================
+
 private val previewViewModelInstance = CalendarViewModel(
     initialMonth = YearMonth.of(2026, 5),
-    // initialDate ではなく、日付と時間をガッチャンコした initialDateTime を渡します
     initialDateTime = java.time.LocalDateTime.of(2026, 5, 1, 10, 0) // 2026年5月1日 10:00 のダミーデータ
 )
 
