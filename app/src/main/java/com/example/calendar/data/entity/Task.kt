@@ -3,7 +3,7 @@ package com.example.calendar.data.entity
 import java.time.LocalDateTime // ★インポート
 
 data class Task(
-    val taskId: Int,
+    val taskId: Long,
     val title: String,
     // ★修正：日付＋時刻をセットで保持する構造へアップデート
     val startTime: LocalDateTime,

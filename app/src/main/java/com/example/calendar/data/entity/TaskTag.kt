@@ -5,6 +5,6 @@ package com.example.calendar.data.entity
  * Task と Tag の多対多を実現するための「結びつき」を保持する
  */
 data class TaskTag(
-    val taskId: Int, // PK, FK (TaskテーブルのtaskIdを指す)
-    val tagId: Int   // PK, FK (TagテーブルのtagIdを指す)
+    val taskId: Long, // PK, FK (TaskテーブルのtaskIdを指す)
+    val tagId: Long   // PK, FK (TagテーブルのtagIdを指す)
 )

@@ -103,9 +103,9 @@ class CalendarViewModel(
 
     // === [完全維持] マスタデータ ===
     val sampleCustomFields = listOf(
-        TagCustomField(fieldId = 1, tagId = 1, fieldName = "提出先"),
-        TagCustomField(fieldId = 2, tagId = 1, fieldName = "点数"),
-        TagCustomField(fieldId = 3, tagId = 2, fieldName = "部屋番号")
+        TagCustomField(fieldId = 1, tagId = 1L, fieldName = "提出先"),
+        TagCustomField(fieldId = 2, tagId = 1L, fieldName = "点数"),
+        TagCustomField(fieldId = 3, tagId = 2L, fieldName = "部屋番号")
     )
 
     fun toggleTagSelection(tag: Tag) {
@@ -142,7 +142,7 @@ class CalendarViewModel(
     private val _taskTags = mutableStateListOf<TaskTag>()
     val taskTags: List<TaskTag> = _taskTags
 
-    private var nextTaskId = 1
+    private var nextTaskId = 1L
 
     // --- 3. 保存処理の実装 ---
     fun saveTask() {
@@ -167,7 +167,11 @@ class CalendarViewModel(
         _tasks.add(newTask) // ViewModel内のリストに直接追加！
 
         inputState.selectedTags.forEach { tag ->
-            val linkedData = TaskTag(taskId = currentId, tagId = tag.tagId)
+            // taskId に渡す currentId を、確実に Long 型にして TaskTag を作成します
+            val linkedData = TaskTag(
+                taskId = currentId.toLong(), // ★ .toLong() を追加して型を確実に合わせる
+                tagId = tag.tagId           // ※ もしここでもエラーが出る場合は tag.tagId.toLong() も検討
+            )
             _taskTags.add(linkedData)
         }
 
