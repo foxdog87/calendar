@@ -19,32 +19,62 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.calendar.viewmodel.TaskDetailViewModel
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskDetailScreen(
     taskId: Long,
+    viewModel: TaskDetailViewModel,
     onNavigateBack: () -> Unit
 ) {
-    // モックアップに配置されている全データを完全にState・定数化
-    var isCompleted by remember { mutableStateOf(false) }
+    // 画面起動時に該当タスクの情報をロード
+    LaunchedEffect(taskId) {
+        viewModel.loadTaskDetail(taskId)
+    }
 
-    val taskTitle = "数学課題提出"
-    val startTimeStr = "2026/05/06（水） 23:59"
-    val endTimeStr = "2026/05/06（水） 23:59"
-    val memoText = "問題集の第3章までを提出すること。\nファイルはPDFで提出。"
+    val itemWithTags = viewModel.currentTaskWithTags
+    val checklistItems = viewModel.checklistState
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("yyyy/MM/dd（E） HH:mm", Locale.JAPANESE) }
 
-    // チェックリストデータ（モックアップ通り状態保持）
-    var checklistItems by remember {
-        mutableStateOf(
-            listOf(
-                ChecklistItem(1, "第1章の復習", false),
-                ChecklistItem(2, "第2章の問題演習", false),
-                ChecklistItem(3, "第3章の演習", true)
-            )
-        )
+    // ロード中のフォールバック処理
+    if (itemWithTags == null) {
+        Scaffold(containerColor = Color.White) { innerPadding ->
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        return
+    }
+
+    val task = itemWithTags.task
+    val isCompleted = task.completeState == "COMPLETED"
+
+    // ★ 修正：タグがある場合は第一タグの色、なければタスクカラーを基準にする
+    val mainTag = itemWithTags.tags.firstOrNull()
+    val baseColor = if (mainTag != null) Color(mainTag.color) else (if (task.color == 0) Color(0xFF1A73E8) else Color(task.color))
+
+    // Long(EpochSecond) を安全に LocalDateTime に相互変換するヘルパー
+    val startDateTime = remember(task.startTime) {
+        LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneOffset.UTC)
+    }
+    val endDateTime = remember(task.endTime) {
+        LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneOffset.UTC)
+    }
+
+    // メイン情報カード用のアイコントグル
+    val mainIcon = when (mainTag?.icon) {
+        "Book" -> Icons.Default.Book
+        "ErrorOutline" -> Icons.Default.ErrorOutline
+        else -> Icons.Default.Bookmark
     }
 
     Scaffold(
@@ -57,17 +87,17 @@ fun TaskDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* TODO: 削除 */ }) {
+                    IconButton(onClick = { viewModel.deleteTask(onSuccess = onNavigateBack) }) {
                         Icon(Icons.Default.DeleteOutline, contentDescription = "削除")
                     }
-                    IconButton(onClick = { /* TODO: その他メニュー */ }) {
+                    IconButton(onClick = { /* その他メニュー */ }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },
-        containerColor = Color(0xFFF9F9F9) // 全体的に薄いグレー背景でカードを引き立たせる
+        containerColor = Color(0xFFF9F9F9)
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -95,8 +125,8 @@ fun TaskDetailScreen(
                         Box(
                             modifier = Modifier
                                 .size(22.dp)
-                                .border(2.dp, if (isCompleted) Color(0xFF1A73E8) else Color.Gray, CircleShape)
-                                .background(if (isCompleted) Color(0xFF1A73E8) else Color.Transparent, CircleShape),
+                                .border(2.dp, if (isCompleted) Color(0xFF34A853) else Color.Gray, CircleShape)
+                                .background(if (isCompleted) Color(0xFF34A853) else Color.Transparent, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             if (isCompleted) {
@@ -106,14 +136,14 @@ fun TaskDetailScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = if (isCompleted) "完了" else "未完了",
-                            color = if (isCompleted) Color(0xFF1A73E8) else Color(0xFF1A73E8),
+                            color = if (isCompleted) Color(0xFF34A853) else Color(0xFF70757A),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp
                         )
                     }
 
                     OutlinedButton(
-                        onClick = { isCompleted = !isCompleted },
+                        onClick = { viewModel.toggleTaskCompletion() },
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                         border = BorderStroke(1.dp, Color(0xFF1A73E8))
@@ -135,23 +165,29 @@ fun TaskDetailScreen(
                 }
             }
 
-            // --- 【2】メイン情報カード（タイトル・タグ・日時・メモ） ---
+            // --- 【2】メイン情報カード ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    // タイトル行
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Book, contentDescription = null, tint = Color(0xFF1A73E8), modifier = Modifier.size(24.dp))
+                            // ★ 修正：メインアイコンと色を連動
+                            Icon(mainIcon, contentDescription = null, tint = baseColor, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(text = taskTitle, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = task.title,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                color = if (isCompleted) Color.Gray else Color.Black
+                            )
                         }
                         Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(20.dp))
                     }
@@ -161,34 +197,41 @@ fun TaskDetailScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // タグセクション
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.Top) {
                         Icon(Icons.Default.Category, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("タグ", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.width(48.dp))
 
-                        // マップされた横並びタグチップ
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MockTagChip("提出物", Color(0xFFE8F0FE), Color(0xFF1A73E8), Icons.Default.Book)
-                            MockTagChip("重要", Color(0xFFFCE8E6), Color(0xFFD93025), Icons.Default.RadioButtonUnchecked)
-                            MockTagChip("数学", Color(0xFFF1F3F4), Color.Black)
-                            MockTagChip("レポート", Color(0xFFF1F3F4), Color.Black)
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .background(Color(0xFFF1F3F4), RoundedCornerShape(6.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (itemWithTags.tags.isEmpty()) {
+                                    Text("なし", fontSize = 14.sp, color = Color.LightGray)
+                                } else {
+                                    // ★ 修正：ハードコードを廃止し、本物のカラーとアイコンを割り当て
+                                    itemWithTags.tags.forEach { tag ->
+                                        val currentTagColor = Color(tag.color)
+                                        val currentTagIcon = when (tag.icon) {
+                                            "Book" -> Icons.Default.Book
+                                            "ErrorOutline" -> Icons.Default.ErrorOutline
+                                            else -> Icons.Default.Bookmark
+                                        }
+                                        MockTagChip(
+                                            text = tag.name,
+                                            bgColor = currentTagColor.copy(alpha = 0.15f), // 薄い背景
+                                            textColor = currentTagColor,                   // クッキリした文字色
+                                            icon = currentTagIcon                          // 該当アイコン
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // 開始・終了日時セクション
-                    TimeRowMock(label = "開始", timeStr = startTimeStr)
+                    TimeRowMock(label = "開始", timeStr = startDateTime.format(timeFormatter))
                     Spacer(modifier = Modifier.height(12.dp))
-                    TimeRowMock(label = "終了", timeStr = endTimeStr)
+                    TimeRowMock(label = "終了", timeStr = endDateTime.format(timeFormatter))
 
                     Spacer(modifier = Modifier.height(20.dp))
                     HorizontalDivider(color = Color(0xFFF0F0F0))
@@ -207,7 +250,13 @@ fun TaskDetailScreen(
                                 .padding(12.dp)
                         ) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                                Text(text = memoText, fontSize = 14.sp, color = Color.Black, lineHeight = 20.sp, modifier = Modifier.weight(1f))
+                                Text(
+                                    text = if (task.memo.isNullOrEmpty()) "メモはありません" else task.memo ?: "",
+                                    fontSize = 14.sp,
+                                    color = if (task.memo.isNullOrEmpty()) Color.LightGray else Color.Black,
+                                    lineHeight = 20.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -215,7 +264,7 @@ fun TaskDetailScreen(
                 }
             }
 
-            // --- 【3】チェックリストカード（動的アイテム追加・状態管理対応） ---
+            // --- 【3】チェックリストカード ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -230,11 +279,7 @@ fun TaskDetailScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // チェックリストアイテム一覧
-                    Column(
-                        modifier = Modifier
-                            .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(8.dp))
-                    ) {
+                    Column(modifier = Modifier.border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(8.dp))) {
                         checklistItems.forEachIndexed { index, item ->
                             Row(
                                 modifier = Modifier
@@ -244,15 +289,17 @@ fun TaskDetailScreen(
                             ) {
                                 Checkbox(
                                     checked = item.isChecked,
-                                    onCheckedChange = { checked ->
-                                        checklistItems = checklistItems.toMutableList().apply {
-                                            this[index] = item.copy(isChecked = checked)
-                                        }
-                                    },
+                                    onCheckedChange = { checked -> viewModel.toggleChecklistItem(index, checked) },
                                     modifier = Modifier.size(24.dp)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text(text = item.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                Text(
+                                    text = item.text,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f),
+                                    textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None,
+                                    color = if (item.isChecked) Color.Gray else Color.Black
+                                )
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.DragHandle, contentDescription = "並び替え", tint = Color.LightGray, modifier = Modifier.size(18.dp))
@@ -265,7 +312,6 @@ fun TaskDetailScreen(
                             }
                         }
 
-                        // 項目を追加ボタン
                         HorizontalDivider(color = Color(0xFFE0E0E0))
                         Row(
                             modifier = Modifier
@@ -282,29 +328,41 @@ fun TaskDetailScreen(
                 }
             }
 
-            // --- 【4】詳細拡張属性リスト（添付ファイルからその他設定まで） ---
+            // --- 【4】詳細拡張属性リスト ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ExtensionRowMock(Icons.Default.AttachFile, "添付ファイル", "課題_第3章.pdf", isLink = true)
-                    ExtensionRowMock(Icons.Default.Link, "URL", "https://example.com/assignment/3", isLink = true)
-                    ExtensionRowMock(Icons.Default.LocationOn, "位置情報", "筑波大学 中央図書館", isLink = true)
-                    ExtensionRowMock(Icons.Default.CalendarMonth, "カウントダウン", "目標日時：2026/05/06（水） 23:59（あと 0 日）", textColor = Color(0xFF1A73E8))
+                    ExtensionRowMock(Icons.Default.AttachFile, "添付ファイル", task.attachmentPath ?: "なし", isLink = task.attachmentPath != null)
+                    ExtensionRowMock(Icons.Default.Link, "URL", task.url ?: "なし", isLink = task.url != null)
+
+                    val locationString = if (task.latitude != null && task.longitude != null) {
+                        "緯度: ${task.latitude}, 経度: ${task.longitude}"
+                    } else {
+                        "なし"
+                    }
+                    ExtensionRowMock(Icons.Default.LocationOn, "位置情報", locationString, isLink = task.latitude != null)
+
+                    val daysLeft = if (endDateTime.isAfter(LocalDateTime.now())) "実施中" else "期限終了"
+                    ExtensionRowMock(Icons.Default.CalendarMonth, "ステータス期限", "目標設定時間：${endDateTime.format(timeFormatter)} ($daysLeft)", textColor = baseColor)
 
                     // 色インジケータ
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Palette, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("色", fontSize = 14.sp, color = Color.Black, modifier = Modifier.weight(1f))
-                        Box(modifier = Modifier.size(16.dp).clip(CircleShape).background(Color(0xFF6699FF)))
+                        Text("表示カラー", fontSize = 14.sp, color = Color.Black, modifier = Modifier.weight(1f))
+                        Box(modifier = Modifier.size(16.dp).clip(CircleShape).background(baseColor))
                         Spacer(modifier = Modifier.width(16.dp))
                         Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
                     }
 
-                    ExtensionRowMock(Icons.Default.Settings, "その他設定", "自動ステータス変更：OFF")
+                    ExtensionRowMock(
+                        icon = Icons.Default.Settings,
+                        label = "その他設定",
+                        content = "自動ステータス変更(期限切れ即時完了)：${if (task.isAutoCompleted) "ON" else "OFF"}"
+                    )
                 }
             }
 
@@ -312,20 +370,18 @@ fun TaskDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                    .padding(top = 12.dp, bottom = 12.dp, start = 4.dp, end = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text("作成日時：2026/05/01（金） 14:30", fontSize = 12.sp, color = Color.Gray)
-                Text("更新日時：2026/05/03（日） 16:45", fontSize = 12.sp, color = Color.Gray)
+                Text("タスク内部ID：${task.taskId}", fontSize = 12.sp, color = Color.Gray)
+                Text("現在のステータスコード：${task.completeState}", fontSize = 12.sp, color = Color.Gray)
             }
         }
     }
 }
 
-// データモデル
 data class ChecklistItem(val id: Int, val text: String, val isChecked: Boolean)
 
-// 補助コンポーネント群（モックアップUI用）
 @Composable
 fun MockTagChip(text: String, bgColor: Color, textColor: Color, icon: ImageVector? = null) {
     Row(
@@ -335,14 +391,10 @@ fun MockTagChip(text: String, bgColor: Color, textColor: Color, icon: ImageVecto
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(12.dp))
+            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(14.dp)) // カレンダーより少し大きめの詳細表示サイズ
             Spacer(modifier = Modifier.width(4.dp))
         }
-        Text(text = text, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-        if (icon != null) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(Icons.Default.Close, contentDescription = null, tint = textColor, modifier = Modifier.size(12.dp))
-        }
+        Text(text = text, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold) // 太字でハッキリ化
     }
 }
 

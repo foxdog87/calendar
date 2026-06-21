@@ -1,20 +1,25 @@
 package com.example.calendar.data.entity
 
-import java.time.LocalDateTime // ★インポート
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 
+@Entity(tableName = "tasks")
 data class Task(
-    val taskId: Long,
+    @PrimaryKey(autoGenerate = true) val taskId: Long = 0,
+    val templateId: Long?,
     val title: String,
-    // ★修正：日付＋時刻をセットで保持する構造へアップデート
-    val startTime: LocalDateTime,
-    val endTime: LocalDateTime,
+    val startTime: Long,
+    val endTime: Long,
     val color: Int,
-    val memo: String? = null,
-    val location: String? = null,
-    val url: String? = null,
-    val checkList: String? = null,
-    val attachmentPath: String? = null,
-    val dayCountTarget: Boolean = false,
-    val completeState: String = "NOT_COMPLETED",
-    val autoCompleted: Boolean = false
+    val memo: String?,
+    val checkList: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val dayCountTarget: Long?,
+    val url: String?,
+    val attachmentPath: String?,
+    val isAutoCompleted: Boolean,
+    val completeState: String = "UNCOMPLETED",
+    // ★ 修正：Int? 型にして、null を「通知なし」の明示的な状態とする
+    val remindMinutes: Int? = null
 )

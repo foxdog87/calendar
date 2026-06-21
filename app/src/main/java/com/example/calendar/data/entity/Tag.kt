@@ -1,11 +1,13 @@
 package com.example.calendar.data.entity
 
-/**
- * ER図の Tag テーブルに対応するデータクラス
- */
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "tags")
 data class Tag(
-    val tagId: Long = 0,         // PK
-    val name: String,          
-    val icon: String? = null,
+    @PrimaryKey(autoGenerate = true)
+    val tagId: Long = 0L,
+    val name: String,
     val color: Int,
+    val icon: String?
 )

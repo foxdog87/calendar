@@ -1,8 +1,11 @@
 package com.example.calendar.data.entity
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 
+@Entity(tableName = "tag_custom_fields")
 data class TagCustomField(
-    val fieldId: Int = 0,    // PK (Primary Key)
-    val tagId: Long,          // FK (Foreign Key): TagテーブルのtagIdを指す
-    val fieldName: String    // ユーザーが入力した項目名（例：「提出先」「点数」）
+    @PrimaryKey(autoGenerate = true) val fieldId: Long = 0,
+    val tagId: Long,                 // BIGINT (FK)
+    val fieldName: String            // VARCHAR(100)
 )

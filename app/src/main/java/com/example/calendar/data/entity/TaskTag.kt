@@ -1,10 +1,9 @@
 package com.example.calendar.data.entity
 
-/**
- * ER図の TaskTag 中間テーブルに対応するデータクラス
- * Task と Tag の多対多を実現するための「結びつき」を保持する
- */
+import androidx.room.Entity
+
+@Entity(tableName = "task_tag", primaryKeys = ["taskId", "tagId"])
 data class TaskTag(
-    val taskId: Long, // PK, FK (TaskテーブルのtaskIdを指す)
-    val tagId: Long   // PK, FK (TagテーブルのtagIdを指す)
+    val taskId: Long,
+    val tagId: Long
 )
