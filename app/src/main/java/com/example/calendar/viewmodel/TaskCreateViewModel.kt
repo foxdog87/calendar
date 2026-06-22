@@ -1,6 +1,6 @@
 package com.example.calendar.viewmodel
 
-import android.content.Context // ★ 追加
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -11,14 +11,18 @@ import com.example.calendar.data.entity.Task
 import com.example.calendar.data.entity.Template
 import com.example.calendar.data.repository.TagRepository
 import com.example.calendar.data.repository.TaskRepository
-import com.example.calendar.notification.TaskAlarmScheduler // ★ 追加
+import com.example.calendar.notification.TaskAlarmScheduler
 import com.example.calendar.state.TaskInputState
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 class TaskCreateViewModel(
@@ -30,7 +34,13 @@ class TaskCreateViewModel(
     var inputState by mutableStateOf(TaskInputState())
         private set
 
-    // ★ 永続化：選択肢として表示するマスタータグ一覧をデータベースから取得
+    // タイトルが空で保存しようとした際のエラー状態を管理するState
+    var isTitleError by mutableStateOf(false)
+        private set
+    var isDateTimeError by mutableStateOf(false)
+        private set
+
+    // 永続化：選択肢として表示するマスタータグ一覧をデータベースから取得
     val allTags: StateFlow<List<Tag>> = tagRepository.allTags
         .stateIn(
             scope = viewModelScope,
@@ -42,21 +52,35 @@ class TaskCreateViewModel(
         inputState = transform(inputState)
     }
 
-    // ★ 新設（問題1の解決）：カレンダー画面で選択された日付を初期値として自動設定する
+    // 初期時刻を現在から最も近い「X時00分」にし、終了はその1時間後にする
     fun prepareCreateTask(selectedDate: LocalDate) {
-        // 選択された日付の「朝9時」から「朝10時」をデフォルトの初期値にする
-        val startDateTime = selectedDate.atTime(9, 0)
-        val endDateTime = selectedDate.atTime(10, 0)
 
-        // RoomやRepositoryがUnixタイムスタンプ（Long型秒数）で扱っている形に変換してセット
-        val startEpoch = startDateTime.toEpochSecond(ZoneOffset.UTC)
-        val endEpoch = endDateTime.toEpochSecond(ZoneOffset.UTC)
+        val startDateTime = java.time.LocalDateTime.now()
+            .plusHours(1)
+            .withMinute(0)
+            .withSecond(0)
+            .withNano(0)
 
-        // 画面の初期状態へ反映
+        val adjustedStart =
+            selectedDate.atTime(startDateTime.hour, 0)
+
+        val adjustedEnd =
+            adjustedStart.plusHours(1)
+
+        isTitleError = false
+        isDateTimeError = false
+
         inputState = TaskInputState(
-            startTime = startEpoch,
-            endTime = endEpoch,
-            selectedTags = emptyList() // 開くたびに選択タグは一回クリアする
+            startTime = adjustedStart
+                .atZone(ZoneId.systemDefault())
+                .toEpochSecond(),
+
+            endTime = adjustedEnd
+                .atZone(ZoneId.systemDefault())
+                .toEpochSecond(),
+
+            selectedTags = emptyList(),
+            isAllDay = false
         )
     }
 
@@ -71,47 +95,106 @@ class TaskCreateViewModel(
         inputState = inputState.copy(selectedTags = currentSelected)
     }
 
-    // ★ 修正：引数に context を追加し、保存成功時にアラーム予約を走らせる
+    // 未入力バリデーション（赤枠化）と、非同期処理完了後に安全に画面を閉じるロジック
     fun saveTask(context: Context, onSuccess: () -> Unit) {
-        if (inputState.title.isBlank()) return // タイトル空っぽならガード
+
+        if (inputState.title.trim().isBlank()) {
+            isTitleError = true
+            return
+        }
+
+        isTitleError = false
+
+        if (
+            !inputState.isAllDay &&
+            inputState.endTime <= inputState.startTime
+        ) {
+            isDateTimeError = true
+            return
+        }
+
+        isDateTimeError = false
 
         viewModelScope.launch {
+
+            val finalStartTime: Long
+            val finalEndTime: Long
+
+            if (inputState.isAllDay) {
+
+                // ★ 修正：システムローカルのタイムゾーンでミリ秒からLocalDateを復元
+                val localDate =
+                    Instant.ofEpochSecond(inputState.startTime)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate()
+
+                // ★ 修正：終日の始まり(00:00)と終わり(23:59:59)をローカルタイムゾーン準拠で秒に換算
+                finalStartTime =
+                    localDate.atTime(0, 0)
+                        .atZone(ZoneId.systemDefault())
+                        .toEpochSecond()
+
+                finalEndTime =
+                    localDate.atTime(23, 59, 59)
+                        .atZone(ZoneId.systemDefault())
+                        .toEpochSecond()
+
+            } else {
+
+                finalStartTime = inputState.startTime
+                finalEndTime = inputState.endTime
+            }
+
             val newTask = Task(
                 title = inputState.title,
-                startTime = inputState.startTime,
-                endTime = inputState.endTime,
+                startTime = finalStartTime,
+                endTime = finalEndTime,
                 memo = inputState.memo,
                 checkList = inputState.checkList,
-                color = inputState.color ?: 0, // ★ エラー回避: Nullならデフォルト色(0)にする
+                color = inputState.color ?: 0,
                 attachmentPath = inputState.attachmentPath,
                 url = inputState.url,
                 latitude = inputState.latitude,
                 longitude = inputState.longitude,
                 isAutoCompleted = inputState.isAutoCompleted,
-                completeState = "INCOMPLETE", // 初期は未完了
-
-                // ★ 追加：UIから入力された通知設定（何分前か）を保存
+                completeState = "INCOMPLETE",
                 remindMinutes = inputState.remindMinutes,
-
                 dayCountTarget = null,
-                templateId = null
+                templateId = null,
+                isAllDay = inputState.isAllDay
             )
 
-            // 1. Repository経由でタスク本体と中間テーブルへ同時保存し、発行された taskId を取得
-            val generatedId = taskRepository.insertTaskWithTags(newTask, inputState.selectedTags)
+            val generatedId =
+                taskRepository.insertTaskWithTags(
+                    newTask,
+                    inputState.selectedTags
+                )
 
-            // 2. 正しいIDを持った状態の Task オブジェクトを作成
-            val savedTask = newTask.copy(taskId = generatedId)
+            val savedTask =
+                newTask.copy(taskId = generatedId)
 
-            // 3. アラームスケジューラーを呼び出してOSに通知予約を入れる
+            android.util.Log.d(
+                "ALARM_TEST",
+                """
+            saveTask called
+            taskId=$generatedId
+            title=${savedTask.title}
+            remindMinutes=${savedTask.remindMinutes}
+            startTime=${savedTask.startTime}
+            endTime=${savedTask.endTime}
+            """.trimIndent()
+            )
+
             val scheduler = TaskAlarmScheduler(context)
             scheduler.schedule(savedTask)
 
-            onSuccess()
+            withContext(Dispatchers.Main) {
+                onSuccess()
+            }
         }
     }
 
-    // ★ 新設：作成画面で新しいタグが作られたらデータベースへ永続保存する
+    // 作成画面で新しいタグが作られたらデータベースへ永続保存する
     fun createTag(tag: Tag) {
         viewModelScope.launch {
             val newId = tagRepository.insertTag(tag)
@@ -120,8 +203,7 @@ class TaskCreateViewModel(
         }
     }
 
-
-    // ★ 新設：作成画面でタグが長押し削除されたらデータベースから消去する
+    // 作成画面でタグが長押し削除されたらデータベースから消去する
     fun deleteTag(tag: Tag) {
         viewModelScope.launch {
             tagRepository.deleteTag(tag)
@@ -131,13 +213,19 @@ class TaskCreateViewModel(
         }
     }
 
-    // テンプレートの適用ロジック（既存）
+    // テンプレートの適用ロジック
     fun applyTemplate(template: Template) {
-        val now = Instant.now().epochSecond
+
+        val (startEpoch, defaultEndEpoch) =
+            createDefaultDateTimePair()
+
+        val endEpoch =
+            startEpoch + template.timeLength
+
         inputState = inputState.copy(
             title = template.title,
-            startTime = now,
-            endTime = now + template.timeLength,
+            startTime = startEpoch,
+            endTime = endEpoch,
             memo = template.memo ?: "",
             checkList = template.checkList ?: "",
             color = template.color,
@@ -146,7 +234,29 @@ class TaskCreateViewModel(
             url = template.url ?: "",
             attachmentPath = template.attachmentPath ?: "",
             isAutoCompleted = template.isAutoCompleted,
-            remindMinutes = template.remindMinutes // ★ テンプレート側の通知設定も引き継ぐ
+            remindMinutes = template.remindMinutes
         )
     }
+}
+
+private fun createDefaultDateTimePair(): Pair<Long, Long> {
+
+    val startDateTime = java.time.LocalDateTime.now()
+        .plusHours(1)
+        .withMinute(0)
+        .withSecond(0)
+        .withNano(0)
+
+    val endDateTime = startDateTime.plusHours(1)
+
+    // ★ 修正：システムローカルタイムゾーンを考慮してEpoch秒を生成
+    return Pair(
+        startDateTime
+            .atZone(ZoneId.systemDefault())
+            .toEpochSecond(),
+
+        endDateTime
+            .atZone(ZoneId.systemDefault())
+            .toEpochSecond()
+    )
 }

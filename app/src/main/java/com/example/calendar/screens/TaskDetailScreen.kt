@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.example.calendar.viewmodel.TaskDetailViewModel
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId // ★ 追加
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.*
@@ -58,16 +59,16 @@ fun TaskDetailScreen(
     val task = itemWithTags.task
     val isCompleted = task.completeState == "COMPLETED"
 
-    // ★ 修正：タグがある場合は第一タグの色、なければタスクカラーを基準にする
+    // タグがある場合は第一タグの色、なければタスクカラーを基準にする
     val mainTag = itemWithTags.tags.firstOrNull()
     val baseColor = if (mainTag != null) Color(mainTag.color) else (if (task.color == 0) Color(0xFF1A73E8) else Color(task.color))
 
-    // Long(EpochSecond) を安全に LocalDateTime に相互変換するヘルパー
+    // ★ 修正（67行目、70行目付近）：Long(EpochSecond) をシステムローカルタイムゾーン基準で LocalDateTime に復元
     val startDateTime = remember(task.startTime) {
-        LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneOffset.UTC)
+        LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneId.systemDefault())
     }
     val endDateTime = remember(task.endTime) {
-        LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneOffset.UTC)
+        LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneId.systemDefault())
     }
 
     // メイン情報カード用のアイコントグル
@@ -178,7 +179,6 @@ fun TaskDetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // ★ 修正：メインアイコンと色を連動
                             Icon(mainIcon, contentDescription = null, tint = baseColor, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
@@ -207,7 +207,6 @@ fun TaskDetailScreen(
                                 if (itemWithTags.tags.isEmpty()) {
                                     Text("なし", fontSize = 14.sp, color = Color.LightGray)
                                 } else {
-                                    // ★ 修正：ハードコードを廃止し、本物のカラーとアイコンを割り当て
                                     itemWithTags.tags.forEach { tag ->
                                         val currentTagColor = Color(tag.color)
                                         val currentTagIcon = when (tag.icon) {
@@ -217,9 +216,9 @@ fun TaskDetailScreen(
                                         }
                                         MockTagChip(
                                             text = tag.name,
-                                            bgColor = currentTagColor.copy(alpha = 0.15f), // 薄い背景
-                                            textColor = currentTagColor,                   // クッキリした文字色
-                                            icon = currentTagIcon                          // 該当アイコン
+                                            bgColor = currentTagColor.copy(alpha = 0.15f),
+                                            textColor = currentTagColor,
+                                            icon = currentTagIcon
                                         )
                                     }
                                 }
@@ -345,7 +344,8 @@ fun TaskDetailScreen(
                     }
                     ExtensionRowMock(Icons.Default.LocationOn, "位置情報", locationString, isLink = task.latitude != null)
 
-                    val daysLeft = if (endDateTime.isAfter(LocalDateTime.now())) "実施中" else "期限終了"
+                    // ★ 修正：システムローカル時間の現在時刻を基準に比較
+                    val daysLeft = if (endDateTime.isAfter(LocalDateTime.now(ZoneId.systemDefault()))) "実施中" else "期限終了"
                     ExtensionRowMock(Icons.Default.CalendarMonth, "ステータス期限", "目標設定時間：${endDateTime.format(timeFormatter)} ($daysLeft)", textColor = baseColor)
 
                     // 色インジケータ
@@ -391,10 +391,10 @@ fun MockTagChip(text: String, bgColor: Color, textColor: Color, icon: ImageVecto
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(14.dp)) // カレンダーより少し大きめの詳細表示サイズ
+            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(14.dp))
             Spacer(modifier = Modifier.width(4.dp))
         }
-        Text(text = text, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold) // 太字でハッキリ化
+        Text(text = text, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }
 }
 

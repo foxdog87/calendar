@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.calendar.components.TagIconBadge // ★ 新設された独立コンポーネントをインポート
 import com.example.calendar.viewmodel.DateDetailViewModel
 import java.time.Instant
 import java.time.LocalDateTime
@@ -91,24 +92,22 @@ fun DateDetailScreen(
                     .padding(innerPadding)
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp), // 少し詰めてまとまり感を出す
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
                 items(dayTasks, key = { it.task.taskId }) { item ->
                     val task = item.task
                     val isCompleted = task.completeState == "COMPLETED"
 
-                    // データベース内の Long (秒) を LocalDateTime へ復元
-                    val startDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneOffset.UTC)
-                    val endDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneOffset.UTC)
+                    val startDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneId.systemDefault())
+                    val endDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneId.systemDefault())
 
-                    // 期限切れ判定（未完了かつ、終了時間を過ぎているか）
+                    // 期限切れ判定
                     val isExpired = !isCompleted && endDateTime.isBefore(now)
 
-                    // ベースカラーの決定（最初のタグの色、無ければタスク自体の色、それも無ければグレー）
+                    // ベースカラーの決定
                     val firstTag = item.tags.firstOrNull()
                     val baseColor = if (firstTag != null) Color(firstTag.color) else (if (task.color == 0) Color(0xFF70757A) else Color(task.color))
-                    val badgeBgColor = if (isCompleted) Color(0xFFE8EAED) else baseColor.copy(alpha = 0.12f)
                     val contentColor = if (isCompleted) Color(0xFF9AA0A6) else baseColor
 
                     Row(
@@ -120,7 +119,7 @@ fun DateDetailScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .width(60.dp)
-                                .padding(top = 12.dp) // カード内のコンテンツ開始位置と高さを合わせる
+                                .padding(top = 12.dp)
                         ) {
                             Text(
                                 text = startDateTime.format(timeFormatter),
@@ -155,7 +154,7 @@ fun DateDetailScreen(
                                 .clickable { onNavigateToTaskDetail(task.taskId) },
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isCompleted) Color(0xFFF1F3F4) else Color(0xFFF8F9FA) // 背景を少し今風のソフトグレーに
+                                containerColor = if (isCompleted) Color(0xFFF1F3F4) else Color(0xFFF8F9FA)
                             ),
                             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
@@ -163,7 +162,7 @@ fun DateDetailScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(14.dp),
-                                verticalAlignment = Alignment.Top // タグ等が増えるため上揃えに変更
+                                verticalAlignment = Alignment.Top
                             ) {
                                 // 完了チェックボタン
                                 IconButton(
@@ -184,7 +183,6 @@ fun DateDetailScreen(
 
                                 // 情報表示カラム
                                 Column(modifier = Modifier.weight(1f)) {
-                                    // 1. 状態バッジ ＋ タスクタイトル
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         if (isCompleted || isExpired) {
                                             Surface(
@@ -213,11 +211,10 @@ fun DateDetailScreen(
                                         )
                                     }
 
-                                    // ★ 追加：2. タグ情報一覧 ＆ 簡単なステータス情報（通知など）
+                                    // タグ情報一覧
                                     if (item.tags.isNotEmpty()) {
                                         Spacer(modifier = Modifier.height(6.dp))
 
-                                        // タグを横並びにする（はみ出す場合は適宜スクロールさせるか、FlowRowにすると安全です）
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
@@ -226,7 +223,6 @@ fun DateDetailScreen(
                                             item.tags.forEach { tag ->
                                                 val tagColor = Color(tag.color)
                                                 val tagBgColor = if (isCompleted) Color(0xFFE8EAED) else tagColor.copy(alpha = 0.12f)
-                                                val tagContentColor = if (isCompleted) Color(0xFF9AA0A6) else tagColor
                                                 val hasIcon = !tag.icon.isNullOrBlank()
 
                                                 Row(
@@ -236,26 +232,16 @@ fun DateDetailScreen(
                                                         .padding(horizontal = 6.dp, vertical = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
+                                                    // ★ 修正：分離されたファイルにある共通の「TagIconBadge」に完全置換！
                                                     if (hasIcon) {
-                                                        val iconEnum = TagIconId.fromId(tag.icon)
-                                                        val tagIcon = TagIconMapper.getVector(iconEnum)
-
-                                                        // カレンダーと統一した「白ブレンドの丸」
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(12.dp)
-                                                                .background(Color.White.copy(alpha = 0.5f), CircleShape),
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = tagIcon,
-                                                                contentDescription = null,
-                                                                tint = tagContentColor,
-                                                                modifier = Modifier.size(9.dp)
-                                                            )
-                                                        }
+                                                        TagIconBadge(
+                                                            tag = tag,
+                                                            size = 14.dp,     // チップ内に綺麗に収まるミニサイズ
+                                                            iconSize = 10.dp
+                                                        )
                                                         Spacer(modifier = Modifier.width(4.dp))
                                                     }
+
                                                     Text(
                                                         text = tag.name,
                                                         fontSize = 10.sp,
@@ -265,16 +251,12 @@ fun DateDetailScreen(
                                                 }
                                             }
 
-                                            // [プチ情報] もしタスクにリマインダー通知などがONならベルマークを表示
-                                            // ※お手元のTaskクラスに通知フラグや時間があれば、以下のコメントアウトを条件式にしてください
-                                            // if (task.hasAlert) {
                                             Icon(
                                                 imageVector = Icons.Default.Notifications,
                                                 contentDescription = "通知あり",
                                                 tint = Color(0xFF5F6368),
                                                 modifier = Modifier.size(14.dp)
                                             )
-                                            // }
                                         }
                                     }
 

@@ -35,7 +35,6 @@ import com.example.calendar.components.TagIconId
 sealed class TagIconSource {
     object InitialText : TagIconSource()
     data class Vector(val iconId: TagIconId) : TagIconSource()
-    data class CustomUri(val uri: Uri) : TagIconSource()
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -48,11 +47,7 @@ fun TagCreateDialog(
     val customFields = remember { mutableStateListOf<String>() }
     val selectedIconSource = remember { mutableStateOf<TagIconSource>(TagIconSource.InitialText) }
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) { selectedIconSource.value = TagIconSource.CustomUri(uri) }
-    }
+
 
     // ★ 改善：独自の定義リストを廃止し、マスターEnumから自動展開
     val sampleIconEnums = remember { TagIconId.entries }
@@ -99,68 +94,86 @@ fun TagCreateDialog(
                     )
                 }
 
-                // --- 2. アイコンプレビュー ＆ 写真選択ボタン ---
+                // --- 2. アイコンプレビュー---
                 item {
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
+                                .size(72.dp)
                                 .clip(CircleShape)
                                 .background(selectedColor.value.copy(alpha = 0.2f))
-                                .border(2.dp, selectedColor.value, CircleShape),
+                                .border(
+                                    width = 2.dp,
+                                    color = selectedColor.value,
+                                    shape = CircleShape
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             when (val source = selectedIconSource.value) {
+
                                 is TagIconSource.InitialText -> {
-                                    val displayChar = if (tagName.value.isNotBlank()) tagName.value.take(1) else "?"
+                                    val displayChar =
+                                        if (tagName.value.isNotBlank())
+                                            tagName.value.take(1)
+                                        else
+                                            "?"
+
                                     Text(
                                         text = displayChar,
-                                        fontSize = 24.sp,
+                                        fontSize = 28.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = selectedColor.value,
-                                        textAlign = TextAlign.Center
+                                        color = selectedColor.value
                                     )
                                 }
+
                                 is TagIconSource.Vector -> {
-                                    // ★ 改善：Mapperを通じて安全にアイコン画像を解決
                                     Icon(
                                         imageVector = source.iconId.vector,
                                         contentDescription = null,
-                                        modifier = Modifier.size(32.dp),
+                                        modifier = Modifier.size(36.dp),
                                         tint = selectedColor.value
-                                    )
-                                }
-                                is TagIconSource.CustomUri -> {
-                                    Image(
-                                        painter = rememberAsyncImagePainter(source.uri),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(64.dp).clip(CircleShape),
-                                        contentScale = ContentScale.Crop
                                     )
                                 }
                             }
                         }
-
-                        OutlinedButton(
-                            onClick = { galleryLauncher.launch("image/*") },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Image, contentDescription = null)
-                            Spacer(modifier = Modifier.size(8.dp))
-                            Text("写真フォルダから選択", fontSize = 13.sp)
-                        }
                     }
                 }
 
-                // --- 3. サンプルアイコン20選 ---
+
+
+                // --- 3. タグカラー選択 ---
                 item {
                     Text(
-                        text = "またはサンプルから選択",
+                        text = "タグカラー",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        maxItemsInEachRow = 6
+                    ) {
+                        sampleColors.forEach { color ->
+                            val isSelected = selectedColor.value == color
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .padding(2.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(width = if (isSelected) 3.dp else 0.dp, color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, shape = CircleShape)
+                                    .clickable { selectedColor.value = color }
+                            )
+                        }
+                    }
+                }
+                // --- 4. サンプルアイコン20選 ---
+                item {
+                    Text(
+                        text = "アイコンを選択",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -191,33 +204,6 @@ fun TagCreateDialog(
                                     tint = if (isSelected) selectedColor.value else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        }
-                    }
-                }
-
-                // --- 4. タグカラー選択 ---
-                item {
-                    Text(
-                        text = "タグカラーを選択 (カレンダー背景色)",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        maxItemsInEachRow = 6
-                    ) {
-                        sampleColors.forEach { color ->
-                            val isSelected = selectedColor.value == color
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .padding(2.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .border(width = if (isSelected) 3.dp else 0.dp, color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, shape = CircleShape)
-                                    .clickable { selectedColor.value = color }
-                            )
                         }
                     }
                 }

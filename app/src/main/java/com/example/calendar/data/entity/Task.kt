@@ -21,5 +21,6 @@ data class Task(
     val isAutoCompleted: Boolean,
     val completeState: String = "UNCOMPLETED",
     // ★ 修正：Int? 型にして、null を「通知なし」の明示的な状態とする
-    val remindMinutes: Int? = null
+    val remindMinutes: Int? = null,
+    val isAllDay: Boolean = false
 )

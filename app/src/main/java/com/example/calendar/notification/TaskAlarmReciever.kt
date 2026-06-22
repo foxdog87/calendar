@@ -7,10 +7,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class TaskAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        Log.d("ALARM_TEST", "Receiver called")
         val taskId = intent.getLongExtra("TASK_ID", -1L)
         val taskTitle = intent.getStringExtra("TASK_TITLE") ?: "予定の時間です"
         val remindMinutes = intent.getIntExtra("REMIND_MINUTES", 0)

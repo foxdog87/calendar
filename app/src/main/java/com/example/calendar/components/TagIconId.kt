@@ -15,4 +15,14 @@ enum class TagIconId(
     WORK("work", Icons.Default.Work),
     STAR("star", Icons.Default.Star),
     FAVORITE("favorite", Icons.Default.Favorite);
+
+    companion object {
+        fun fromId(id: String?): TagIconId? {
+            if (id.isNullOrBlank()) return null
+
+            return entries.firstOrNull {
+                it.id == id
+            }
+        }
     }
+}

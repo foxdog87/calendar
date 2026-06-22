@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import android.text.format.DateFormat
+import android.util.Log
 import com.example.calendar.data.entity.Task
 import com.example.calendar.notification.TaskAlarmReceiver
 
@@ -15,17 +17,44 @@ class TaskAlarmScheduler(private val context: Context) {
 
     @SuppressLint("ScheduleExactAlarm")
     fun schedule(task: Task) {
-        // 通知設定（remindMinutes）が null の場合は何もしない
+
         val remindMinutes = task.remindMinutes ?: return
 
-        // 実際の通知タイミング（エポック秒からミリ秒に変換。開始時間から差し引く）
-        // startTime（秒） × 1000 = ミリ秒
         val startMillis = task.startTime * 1000
         val remindMillis = remindMinutes * 60 * 1000
         val triggerAtMillis = startMillis - remindMillis
 
-        // すでに過去の時刻になっている場合はセットしない
-        if (triggerAtMillis <= System.currentTimeMillis()) return
+        Log.d("ALARM_TEST", "schedule called")
+        Log.d("ALARM_TEST", "taskId=${task.taskId}")
+        Log.d("ALARM_TEST", "title=${task.title}")
+        Log.d("ALARM_TEST", "remindMinutes=$remindMinutes")
+        Log.d("ALARM_TEST", "startTime=${task.startTime}")
+        Log.d("ALARM_TEST", "triggerAtMillis=$triggerAtMillis")
+
+        Log.d(
+            "ALARM_TEST",
+            "triggerDate=${
+                DateFormat.format(
+                    "yyyy/MM/dd HH:mm:ss",
+                    triggerAtMillis
+                )
+            }"
+        )
+
+        Log.d(
+            "ALARM_TEST",
+            "currentDate=${
+                DateFormat.format(
+                    "yyyy/MM/dd HH:mm:ss",
+                    System.currentTimeMillis()
+                )
+            }"
+        )
+
+        if (triggerAtMillis <= System.currentTimeMillis()) {
+            Log.d("ALARM_TEST", "alarm skipped because trigger time is in the past")
+            return
+        }
 
         val intent = Intent(context, TaskAlarmReceiver::class.java).apply {
             putExtra("TASK_ID", task.taskId)
@@ -35,30 +64,25 @@ class TaskAlarmScheduler(private val context: Context) {
 
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            task.taskId.toInt(), // requestCodeをtaskIdにすることで、タスクごとに独立したアラームを確保
+            task.taskId.toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Android 12 (API 31) 以上で正確なアラーム権限をチェック
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!alarmManager.canScheduleExactAlarms()) {
-                // 権限がない場合は不正確なアラームで代用するか、システム設定へ促す必要があります
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-                return
-            }
+            Log.d(
+                "ALARM_TEST",
+                "canScheduleExact=${alarmManager.canScheduleExactAlarms()}"
+            )
         }
 
-        // 正確な時間（スリープ解除してでも鳴らす）にセット
         alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             triggerAtMillis,
             pendingIntent
         )
+
+        Log.d("ALARM_TEST", "alarm registered")
     }
 
     fun cancel(task: Task) {

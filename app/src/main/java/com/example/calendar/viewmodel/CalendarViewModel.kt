@@ -14,10 +14,11 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import java.time.ZoneId // ★ 追加
 import java.time.ZoneOffset
 
 class CalendarViewModel(
-    private val taskDao: TaskDao, // ★ Roomからデータを引っ張るために注入
+    private val taskDao: TaskDao, // Roomからデータを引っ張るために注入
     initialMonth: YearMonth = YearMonth.now(),
     initialDateTime: LocalDateTime = LocalDateTime.now()
 ) : ViewModel() {
@@ -29,9 +30,9 @@ class CalendarViewModel(
     // データベースからすべてのタスクを取得し、カレンダー描画用に「日付（LocalDate）」ごとのリストにリアルタイム集計
     val tasksByDate: StateFlow<Map<LocalDate, List<TaskWithTags>>> = taskDao.getAllTasksWithTags()
         .map { totalList ->
-            // EpochSecondのLong型をLocalDateTimeにパースし、LocalDateでグループ化
+            // ★ 修正（33行目付近）：EpochSecond の Long型をシステムローカルタイムゾーン基準で LocalDateTime にパースし、LocalDateでグループ化
             totalList.groupBy { item ->
-                LocalDateTime.ofInstant(Instant.ofEpochSecond(item.task.startTime), ZoneOffset.UTC).toLocalDate()
+                LocalDateTime.ofInstant(Instant.ofEpochSecond(item.task.startTime), ZoneId.systemDefault()).toLocalDate()
             }
         }
         .stateIn(

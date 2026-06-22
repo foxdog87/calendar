@@ -10,17 +10,33 @@ import androidx.lifecycle.lifecycleScope
 import com.example.calendar.data.AppDatabase
 import com.example.calendar.ui.theme.CalendarTheme
 import com.example.calendar.viewmodel.CalendarViewModel
+import android.Manifest
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : ComponentActivity() {
+
+    private val requestNotificationPermission =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestNotificationPermission.launch(
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        }
+
         enableEdgeToEdge()
 
-        // 1. RoomデータベースからTaskDaoを取得（setContentの外側で安全に1回だけ）
         val database = AppDatabase.getDatabase(
             context = applicationContext,
             scope = lifecycleScope
         )
+
         val taskDao = database.taskDao()
 
         setContent {

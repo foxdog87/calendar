@@ -1,4 +1,4 @@
-package com.example.calendar.notification // ★ここのパッケージ名がマニフェストと完全一致する必要があります
+package com.example.calendar.notification
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
+import java.time.ZoneId // ★ 追加
 import java.time.ZoneOffset
 
 class BootReceiver : BroadcastReceiver() {
@@ -16,9 +17,11 @@ class BootReceiver : BroadcastReceiver() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val currentEpoch = LocalDateTime.now().toEpochSecond(ZoneOffset.UTC)
+                    // ★ 修正：システムローカルタイムゾーンでEpoch秒を取得
+                    val currentEpoch = LocalDateTime.now()
+                        .atZone(ZoneId.systemDefault())
+                        .toEpochSecond()
 
-                    // ※ AppDatabaseの生成ロジックはお使いのプロジェクトに合わせて適宜微調整してください
                     val database = AppDatabase.getDatabase(context.applicationContext, this)
                     val taskDao = database.taskDao()
 
