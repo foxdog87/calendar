@@ -1,32 +1,62 @@
 package com.example.calendar.data.repository
 
-import android.util.Log
+import com.example.calendar.data.dao.ChecklistItemDao
 import com.example.calendar.data.dao.TaskDao
+import com.example.calendar.data.dao.TaskTagDao
+import com.example.calendar.data.entity.ChecklistItem
 import com.example.calendar.data.entity.Tag
 import com.example.calendar.data.entity.Task
 import com.example.calendar.data.entity.TaskTag
-import com.example.calendar.data.entity.TaskWithTags
+import com.example.calendar.data.relation.TaskWithTags
 import kotlinx.coroutines.flow.Flow
 
-class TaskRepository(private val taskDao: TaskDao) {
+class TaskRepository(
+    private val taskDao: TaskDao,
+    private val taskTagDao: TaskTagDao,
+    private val checklistItemDao: ChecklistItemDao
+) {
 
-    // すべてのタスク（タグ付き）をリアルタイムで取得
-    val allTasksWithTags: Flow<List<TaskWithTags>> = taskDao.getAllTasksWithTags()
+    val allTasksWithTags: Flow<List<TaskWithTags>> =
+        taskDao.getAllTasksWithTags()
 
-    // ★ 修正: 戻り値の型に : Long を追加
-    suspend fun insertTaskWithTags(
+
+    suspend fun getTaskWithTagsById(
+        taskId: Long
+    ): TaskWithTags? {
+        return taskDao.getTaskWithTagsById(taskId)
+    }
+
+
+    suspend fun insertTaskWithTagsAndChecklist(
         task: Task,
-        tags: List<Tag>
+        tags: List<Tag>,
+        checklistItems: List<ChecklistItem>
     ): Long {
-        val taskId = taskDao.insertTask(task)
+
+
+        val taskId =
+            taskDao.insertTask(task)
+
+
+        val items =
+            checklistItems.mapIndexed { index, item ->
+
+                item.copy(
+                    id = 0L,
+                    taskId = taskId,
+                    position = index
+                )
+            }
+
+
+        if (items.isNotEmpty()) {
+            checklistItemDao.insertAll(items)
+        }
+
 
         tags.forEach { tag ->
-            Log.d(
-                "TagSave",
-                "taskId=$taskId tagId=${tag.tagId} name=${tag.name}"
-            )
 
-            taskDao.insertTaskTag(
+            taskTagDao.insert(
                 TaskTag(
                     taskId = taskId,
                     tagId = tag.tagId
@@ -34,17 +64,82 @@ class TaskRepository(private val taskDao: TaskDao) {
             )
         }
 
-        // ★ 追加: 新しく生成されたtaskIdをViewModelへ返却する
+
         return taskId
     }
 
-    // タスクの更新（完了状態のトグルなど）
-    suspend fun updateTask(task: Task) {
+
+
+    suspend fun updateTaskWithTagsAndChecklist(
+        task: Task,
+        tags: List<Tag>,
+        checklistItems: List<ChecklistItem>
+    ) {
+
+
+        taskDao.updateTask(task)
+
+
+        checklistItemDao.deleteForTask(
+            task.taskId
+        )
+
+
+        val items =
+            checklistItems.mapIndexed { index, item ->
+
+                item.copy(
+                    id = 0L,
+                    taskId = task.taskId,
+                    position = index
+                )
+            }
+
+
+        if (items.isNotEmpty()) {
+            checklistItemDao.insertAll(items)
+        }
+
+
+        taskTagDao.deleteForTask(
+            task.taskId
+        )
+
+
+        tags.forEach { tag ->
+
+            taskTagDao.insert(
+                TaskTag(
+                    taskId = task.taskId,
+                    tagId = tag.tagId
+                )
+            )
+        }
+    }
+
+
+
+    suspend fun updateTask(
+        task: Task
+    ) {
         taskDao.updateTask(task)
     }
 
-    // タスクの削除
-    suspend fun deleteTask(task: Task) {
+
+
+    suspend fun deleteTask(
+        task: Task
+    ) {
         taskDao.deleteTask(task)
+    }
+
+
+
+    suspend fun getChecklistItems(
+        taskId: Long
+    ): List<ChecklistItem> {
+
+        return checklistItemDao
+            .getChecklistItemsByTaskId(taskId)
     }
 }

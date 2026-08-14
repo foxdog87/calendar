@@ -16,17 +16,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.calendar.components.TagIconBadge // ★ 先ほど作った丸背景の共通コンポーネントをインポート
+import com.example.calendar.components.TagIconBadge
+import com.example.calendar.data.entity.Tag
+import com.example.calendar.data.entity.Task
+import com.example.calendar.data.relation.TaskWithTags
 import com.example.calendar.viewmodel.CalendarViewModel
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
+import com.example.calendar.components.MonthYearPickerDialog
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -42,6 +48,40 @@ fun CalendarScreen(
     val tasksByDate by viewModel.tasksByDate.collectAsState()
 
     val selectedDate = selectedDateTime.toLocalDate()
+
+    CalendarScreenContent(
+        currentMonth = currentMonth,
+        selectedDate = selectedDate,
+        tasksByDate = tasksByDate,
+        buildCalendarMatrix = { month -> viewModel.buildCalendarMatrix(month, "MONTH") },
+        onDateSelected = { viewModel.onDateSelected(it) },
+        onPreviousMonth = { viewModel.onPreviousMonth() },
+        onNextMonth = { viewModel.onNextMonth() },
+        onUpdateYearMonth = { y, m -> viewModel.updateYearMonth(y, m) },
+        onNavigateToTaskCreate = onNavigateToTaskCreate,
+        onNavigateToTaskList = onNavigateToTaskList,
+        onNavigateToDateDetail = onNavigateToDateDetail,
+        onNavigateToSettings = onNavigateToSettings
+    )
+}
+
+// Preview や テストのためにロジックを分離したUIコンポーネント
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun CalendarScreenContent(
+    currentMonth: YearMonth,
+    selectedDate: LocalDate,
+    tasksByDate: Map<LocalDate, List<TaskWithTags>>,
+    buildCalendarMatrix: (YearMonth) -> List<LocalDate?>,
+    onDateSelected: (LocalDate) -> Unit,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onUpdateYearMonth: (Int, Int) -> Unit,
+    onNavigateToTaskCreate: (LocalDate) -> Unit,
+    onNavigateToTaskList: () -> Unit,
+    onNavigateToDateDetail: (LocalDate) -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
     var showMonthYearDialog by remember { mutableStateOf(false) }
 
     val today = LocalDate.now()
@@ -59,7 +99,7 @@ fun CalendarScreen(
         val monthOffset = (pagerState.currentPage - initialPage).toLong()
         val targetMonth = YearMonth.now().plusMonths(monthOffset)
         if (targetMonth != currentMonth) {
-            viewModel.updateYearMonth(targetMonth.year, targetMonth.monthValue)
+            onUpdateYearMonth(targetMonth.year, targetMonth.monthValue)
         }
     }
 
@@ -79,7 +119,11 @@ fun CalendarScreen(
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Menu, contentDescription = "設定", tint = Color(0xFF1C1B1F))
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = "設定",
+                            tint = Color(0xFF1C1B1F)
+                        )
                     }
                 },
                 title = {
@@ -92,7 +136,7 @@ fun CalendarScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clickable { showMonthYearDialog = true }
-                                .padding(top = 4.dp, bottom = 4.dp)
+                                .padding(vertical = 4.dp)
                         ) {
                             Text(
                                 text = "${currentMonth.year}年 ${currentMonth.monthValue}月",
@@ -110,10 +154,10 @@ fun CalendarScreen(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { viewModel.onPreviousMonth() }) {
+                            IconButton(onClick = onPreviousMonth) {
                                 Icon(Icons.Default.ChevronLeft, contentDescription = "前月", tint = Color(0xFF5F6368))
                             }
-                            IconButton(onClick = { viewModel.onNextMonth() }) {
+                            IconButton(onClick = onNextMonth) {
                                 Icon(Icons.Default.ChevronRight, contentDescription = "次月", tint = Color(0xFF5F6368))
                             }
                         }
@@ -122,32 +166,73 @@ fun CalendarScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = softGrayBackground)
             )
         },
+        // ★ タブレット・端末サイズごとの表示崩れを防ぐためナビゲーション領域に余白を追加
+        // ★ 変更：NavigationBarの代わりにRowを使用してタブレットでのレイアウト崩れを完全に防ぐ
         bottomBar = {
             Surface(
-                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding(),
+                shadowElevation = 8.dp,
                 color = softGrayBackground
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center
+                        .height(64.dp)
                 ) {
-                    ExtendedFloatingActionButton(
-                        onClick = onNavigateToTaskList,
-                        icon = { Icon(Icons.Default.FormatListBulleted, null) },
-                        text = { Text("一覧") }
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    ExtendedFloatingActionButton(
-                        onClick = { onNavigateToTaskCreate(selectedDate) },
-                        icon = { Icon(Icons.Default.Add, null) },
-                        text = { Text("追加") }
-                    )
+                    // 左：一覧ボタン
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onNavigateToTaskList() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.FormatListBulleted, contentDescription = null, tint = Color(0xFF49454F))
+                            Text("一覧", fontSize = 11.sp, color = Color(0xFF49454F))
+                        }
+                    }
+
+                    // 中央：予定追加ボタン
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Button(
+                            onClick = { onNavigateToTaskCreate(selectedDate) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
+                            shape = RoundedCornerShape(24.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.height(42.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("追加", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // 右：設定ボタン
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onNavigateToSettings() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF49454F))
+                            Text("設定", fontSize = 11.sp, color = Color(0xFF49454F))
+                        }
+                    }
                 }
             }
         },
-        containerColor = softGrayBackground
+        containerColor = softGrayBackground,
+        contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -158,7 +243,7 @@ fun CalendarScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp, bottom = 10.dp)
+                    .padding(vertical = 10.dp)
             ) {
                 val daysOfWeek = listOf("日", "月", "火", "水", "木", "金", "土")
                 daysOfWeek.forEachIndexed { index, day ->
@@ -187,7 +272,7 @@ fun CalendarScreen(
                 val monthOffset = (page - initialPage).toLong()
                 val pageMonth = YearMonth.now().plusMonths(monthOffset)
 
-                val totalGridItems = viewModel.buildCalendarMatrix(pageMonth, "MONTH")
+                val totalGridItems = buildCalendarMatrix(pageMonth)
                 val chunkedWeeks = totalGridItems.chunked(7)
 
                 Column(
@@ -214,7 +299,7 @@ fun CalendarScreen(
                                                 if (isSelected) {
                                                     onNavigateToDateDetail(date)
                                                 } else {
-                                                    viewModel.onDateSelected(date)
+                                                    onDateSelected(date)
                                                 }
                                             }
                                             .padding(top = 4.dp, start = 2.dp, end = 2.dp),
@@ -276,10 +361,9 @@ fun CalendarScreen(
                                                     horizontalArrangement = Arrangement.Start
                                                 ) {
                                                     if (hasIcon && mainTag != null) {
-                                                        // ★ 修正優先度③: 共通化した `TagIcon` を直接呼び出し、不要なwhenや独自の変換処理を全削除！
                                                         TagIconBadge(
                                                             tag = mainTag,
-                                                            size = 14.dp,    // マスに収まるように極小サイズ
+                                                            size = 14.dp,
                                                             iconSize = 10.dp
                                                         )
                                                         Spacer(modifier = Modifier.width(2.dp))
@@ -339,40 +423,72 @@ fun CalendarScreen(
         }
 
         if (showMonthYearDialog) {
-            var yearInput by remember { mutableStateOf(currentMonth.year.toString()) }
-            var monthInput by remember { mutableStateOf(currentMonth.monthValue.toString()) }
-
-            AlertDialog(
-                onDismissRequest = { showMonthYearDialog = false },
-                title = { Text("年月を指定", fontWeight = FontWeight.Bold) },
-                text = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = yearInput,
-                            onValueChange = { yearInput = it },
-                            label = { Text("年") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = monthInput,
-                            onValueChange = { monthInput = it },
-                            label = { Text("月") },
-                            modifier = Modifier.weight(1f)
-                        )
+            MonthYearPickerDialog(
+                currentMonth = currentMonth,
+                onDismiss = { showMonthYearDialog = false },
+                onConfirm = { year, month ->
+                    if (month in 1..12) {
+                        onUpdateYearMonth(year, month)
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val y = yearInput.toIntOrNull() ?: currentMonth.year
-                        val m = monthInput.toIntOrNull() ?: currentMonth.monthValue
-                        if (m in 1..12) viewModel.updateYearMonth(y, m)
-                        showMonthYearDialog = false
-                    }) { Text("決定", fontWeight = FontWeight.Bold) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showMonthYearDialog = false }) { Text("キャンセル", color = Color.Gray) }
+                    showMonthYearDialog = false
                 }
             )
         }
     }
+}
+
+// --- ★ Compose Preview (開発・デザイン確認用プレビュー) ---
+
+@Preview(showBackground = true, name = "カレンダー画面（通常表示）")
+@Composable
+fun CalendarScreenPreview() {
+    val today = LocalDate.now()
+    val dummyTags = listOf(Tag(tagId = 1L, name = "会議", color = Color(0xFF1E88E5).toArgb(), icon = null))
+    val dummyTasks = mapOf(
+        today to listOf(
+            TaskWithTags(
+                task = Task(
+                    taskId = 1L,
+                    title = "全体定例ミーティング",
+                    startTime = Instant.now().epochSecond,
+                    endTime = Instant.now().plusSeconds(3600).epochSecond,
+                    memo = "",  color = Color(0xFF4285F4).toArgb(),
+                    attachmentPath = "", url = "", locationName = "筑波大学",
+                    locationAddress = "茨城県つくば市天王台1-1-1",
+                    isAutoCompleted = false, completeState = "INCOMPLETE",
+                    reminderOffsetMinutes = 10, dayCountTarget = null, templateId = null, isAllDay = false
+                ),
+                tags = dummyTags
+            )
+        )
+    )
+
+    // 42日分のダミーマトリックス生成（1か月分）
+    val firstDayOfMonth = today.withDayOfMonth(1)
+    val startDayOfWeek = firstDayOfMonth.dayOfWeek.value % 7
+    val dummyMatrix = mutableListOf<LocalDate?>()
+    for (i in 0 until startDayOfWeek) dummyMatrix.add(null)
+    for (i in 1..today.lengthOfMonth()) dummyMatrix.add(today.withDayOfMonth(i))
+    while (dummyMatrix.size < 42) dummyMatrix.add(null)
+
+    CalendarScreenContent(
+        currentMonth = YearMonth.now(),
+        selectedDate = today,
+        tasksByDate = dummyTasks,
+        buildCalendarMatrix = { dummyMatrix },
+        onDateSelected = {},
+        onPreviousMonth = {},
+        onNextMonth = {},
+        onUpdateYearMonth = { _, _ -> },
+        onNavigateToTaskCreate = {},
+        onNavigateToTaskList = {},
+        onNavigateToDateDetail = {},
+        onNavigateToSettings = {}
+    )
+}
+
+@Preview(showBackground = true, widthDp = 840, heightDp = 480, name = "カレンダー画面（タブレット横画面）")
+@Composable
+fun CalendarScreenTabletPreview() {
+    CalendarScreenPreview()
 }

@@ -9,24 +9,60 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.example.calendar.R
+import com.example.calendar.data.AppDatabase
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 class TaskAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d("ALARM_TEST", "Receiver called")
-        val taskId = intent.getLongExtra("TASK_ID", -1L)
-        val taskTitle = intent.getStringExtra("TASK_TITLE") ?: "予定の時間です"
-        val remindMinutes = intent.getIntExtra("REMIND_MINUTES", 0)
 
+        val taskId = intent.getLongExtra("TASK_ID", -1L)
         if (taskId == -1L) return
 
+        // データベースから最新のタスク情報を取得
+        val task = runBlocking {
+            AppDatabase
+                .getDatabase(
+                    context.applicationContext,
+                    CoroutineScope(Dispatchers.IO)
+                )
+                .taskDao()
+                .getTaskById(taskId)
+        }
+
+        if (task == null) {
+            Log.d("ALARM_TEST", "task not found")
+            return
+        }
+
+        if (task.completeState == "COMPLETED") {
+            Log.d("ALARM_TEST", "completed task")
+            return
+        }
+
+        // ★ 新しい通知設定モデル (Domain) を取得し、通知テキストを生成
+        val text = when (val setting = task.getReminderSetting()) {
+            is ReminderSetting.None -> {
+                // 万が一アラームのキャンセルが漏れていても、設定がOFFならここでブロックする（安全装置）
+                Log.d("ALARM_TEST", "Notification is disabled in DB")
+                return
+            }
+            is ReminderSetting.AtStartTime -> "開始時間になりました"
+            is ReminderSetting.Before -> "開始の${setting.minutes}分前です"
+            is ReminderSetting.DayBefore -> "明日の予定です"
+        }
+
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "task_reminder_channel"
+        val channelId = NotificationConstants.CHANNEL_ID
 
         // Android 8.0以上は通知チャンネルが必須
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "タスクリマインダー通知",
+                NotificationConstants.CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "予定の事前通知を行います"
@@ -34,13 +70,12 @@ class TaskAlarmReceiver : BroadcastReceiver() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // 通知をタップしたときにアプリを開く設定（適切なActivityに書き換えてください）
-        // ここでは仮に一般的な「MainActivity」宛てにしています
-        val text = if (remindMinutes > 0) "開始の${remindMinutes}分前です" else "開始時間になりました"
-
-        val contentIntent = Intent(context, Class.forName("${context.packageName}.MainActivity")).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("TARGET_TASK_ID", taskId) // アプリ起動時に詳細画面へ飛ばしたい場合用
+        val contentIntent = Intent(
+            context,
+            Class.forName("${context.packageName}.MainActivity")
+        ).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("TARGET_TASK_ID", taskId)
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -52,8 +87,9 @@ class TaskAlarmReceiver : BroadcastReceiver() {
 
         // 通知のビルド
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm) // アプリ固有のアイコンがあれば差し替えてください
-            .setContentTitle(taskTitle)
+            .setSmallIcon(R.drawable.ic_notification_calendar)
+            // ★ Intentからではなく、常にDBの最新のタイトルを使用する
+            .setContentTitle(task.title)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

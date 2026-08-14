@@ -1,38 +1,111 @@
 package com.example.calendar.data.repository
 
-import androidx.compose.ui.graphics.Color
-import com.example.calendar.data.dao.TaskDao
+import com.example.calendar.data.dao.TagDao
+import com.example.calendar.data.dao.TagDisplayOrderDao
+import com.example.calendar.data.dao.TaskTagDao
 import com.example.calendar.data.entity.Tag
+import com.example.calendar.data.entity.TagDisplayOrder
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 
-class TagRepository(private val taskDao: TaskDao) {
+class TagRepository(
+    private val tagDao: TagDao,
+    private val tagDisplayOrderDao: TagDisplayOrderDao,
+    private val taskTagDao: TaskTagDao
+) {
 
-    // すべてのタグを取得する。もしデータが空なら初期タグを注入する
-    val allTags: Flow<List<Tag>> = taskDao.getAllTags()
-        .onStart {
-            // 初回データ取得時に、テーブルが空っぽなら初期データを投入する
-            val currentTags = taskDao.getAllTags().first()
-            if (currentTags.isEmpty()) {
-                val defaultTags = listOf(
-                    Tag(name = "提出物", color = Color(0xFFFFD54F).value.toInt(), icon = "Book"),
-                    Tag(name = "重要", color = Color(0xFFFF8A80).value.toInt(), icon = "ErrorOutline"),
-                    Tag(name = "数学", color = Color(0xFF80D8FF).value.toInt(), icon = ""),
-                    Tag(name = "レポート", color = Color(0xFFD1C4E9).value.toInt(), icon = "")
-                )
-                defaultTags.forEach { taskDao.insertTag(it) }
+
+    /**
+     * 表示順付きタグ一覧取得
+     */
+    fun getAllTags(): Flow<List<Tag>> {
+
+        return combine(
+            tagDao.getAllTags(),
+            tagDisplayOrderDao.getAllOrders()
+        ) { tags, orders ->
+
+
+            val orderMap =
+                orders.associateBy {
+                    it.tagId
+                }
+
+
+            tags.sortedBy { tag ->
+
+                orderMap[tag.tagId]?.position
+                    ?: Int.MAX_VALUE
+
             }
         }
-
-    // 新規タグをデータベースに保存する
-    suspend fun insertTag(tag: Tag): Long {
-        return taskDao.insertTag(tag)
     }
 
-    // タグを削除する（中間テーブルのデータも安全に一緒に消す）
+
+
+    /**
+     * タグ作成
+     */
+    suspend fun createTag(
+        tag: Tag
+    ): Long {
+
+
+        val tagId =
+            tagDao.insertTag(tag)
+
+
+        val maxPosition =
+            tagDisplayOrderDao
+                .getMaxPosition()
+                ?: -1
+
+
+        tagDisplayOrderDao.insert(
+            TagDisplayOrder(
+                tagId = tagId,
+                position = maxPosition + 1
+            )
+        )
+
+
+        return tagId
+    }
+
+
+
+    suspend fun updateTag(
+        tag: Tag
+    ) {
+        tagDao.updateTag(tag)
+    }
+
+
+
+    /**
+     * タグ削除
+     */
     suspend fun deleteTag(tag: Tag) {
-        taskDao.deleteIntermediateTaskTag(tag.tagId)
-        taskDao.deleteTag(tag)
+
+        taskTagDao.deleteForTag(tag.tagId)
+
+        tagDisplayOrderDao.deleteByTagId(tag.tagId)
+
+        tagDao.deleteTag(tag)
     }
+
+
+
+    /**
+     * 並び替え保存
+     */
+    // TagRepository.kt
+    suspend fun updateTagOrder(tags: List<Tag>) {
+        val orders = tags.mapIndexed { index, tag ->
+            TagDisplayOrder(tagId = tag.tagId, position = index)
+        }
+        tagDisplayOrderDao.insertAll(orders) // ← updateAll から insertAll に変更
+    }
+
+
 }

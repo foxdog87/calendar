@@ -63,6 +63,8 @@ dependencies {
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
 
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     implementation("androidx.room:room-runtime:2.7.2")

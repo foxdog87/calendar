@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Notifications
@@ -22,43 +23,66 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.calendar.components.TagIconBadge // ★ 新設された独立コンポーネントをインポート
+import com.example.calendar.components.TagLabel
+import com.example.calendar.data.entity.Tag
+import com.example.calendar.data.entity.Task
+import com.example.calendar.data.relation.TaskWithTags
 import com.example.calendar.viewmodel.DateDetailViewModel
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DateDetailScreen(
-    dateMillis: Long, // カレンダーなどから渡されるミリ秒タイムスタンプ
+    dateMillis: Long,
     viewModel: DateDetailViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToTaskDetail: (Long) -> Unit
+    onNavigateToTaskDetail: (Long) -> Unit,
+    onNavigateToCreateTask: (Long) -> Unit = {}
 ) {
-    // 1. ミリ秒タイムスタンプから LocalDate を復元
     val targetDate = remember(dateMillis) {
-        Instant.ofEpochMilli(dateMillis)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
+        Instant.ofEpochMilli(dateMillis).atZone(ZoneId.systemDefault()).toLocalDate()
     }
 
-    // 2. 画面が表示・変更されたタイミングで、ViewModel の抽出日ターゲットを更新
     LaunchedEffect(targetDate) {
         viewModel.setDate(targetDate)
     }
 
-    // 3. ViewModel からリアルタイムにフィルタリングされたその日のタスク一覧を購読
     val dayTasks by viewModel.filteredTasks.collectAsState()
 
+    DateDetailContent(
+        targetDate = targetDate,
+        dateMillis = dateMillis,
+        dayTasks = dayTasks,
+        onNavigateBack = onNavigateBack,
+        onNavigateToTaskDetail = onNavigateToTaskDetail,
+        onNavigateToCreateTask = onNavigateToCreateTask,
+        onToggleTaskCompletion = { viewModel.toggleTaskCompletion(it) }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DateDetailContent(
+    targetDate: LocalDate,
+    dateMillis: Long,
+    dayTasks: List<TaskWithTags>,
+    onNavigateBack: () -> Unit,
+    onNavigateToTaskDetail: (Long) -> Unit,
+    onNavigateToCreateTask: (Long) -> Unit,
+    onToggleTaskCompletion: (TaskWithTags) -> Unit
+) {
     val headerFormatter = remember { DateTimeFormatter.ofPattern("yyyy年MM月dd日 (E)", Locale.JAPANESE) }
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm", Locale.JAPANESE) }
     val now = LocalDateTime.now()
@@ -66,25 +90,35 @@ fun DateDetailScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(text = targetDate.format(headerFormatter), fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+                // ★ タイトル文字色を黒に指定
+                title = { Text(text = targetDate.format(headerFormatter), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "戻る", tint = Color.Black)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { onNavigateToCreateTask(dateMillis) },
+                containerColor = Color(0xFF1A73E8),
+                contentColor = Color.White,
+                icon = { Icon(Icons.Default.Add, contentDescription = "作成") },
+                text = { Text("作成", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
             )
         },
         containerColor = Color.White
     ) { innerPadding ->
         if (dayTasks.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("この日の予定はありません", color = Color.Gray, fontSize = 14.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("この日の予定はありません", color = Color(0xFF70757A), fontSize = 14.sp)
+                }
             }
         } else {
             LazyColumn(
@@ -93,83 +127,51 @@ fun DateDetailScreen(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+                contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp) // FABとかぶらないように下部余白を確保
             ) {
                 items(dayTasks, key = { it.task.taskId }) { item ->
                     val task = item.task
                     val isCompleted = task.completeState == "COMPLETED"
-
                     val startDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneId.systemDefault())
                     val endDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneId.systemDefault())
 
                     // 期限切れ判定
-                    val isExpired = !isCompleted && endDateTime.isBefore(now)
+                    val isExpired = !isCompleted && !task.isAllDay && endDateTime.isBefore(now)
 
-                    // ベースカラーの決定
                     val firstTag = item.tags.firstOrNull()
-                    val baseColor = if (firstTag != null) Color(firstTag.color) else (if (task.color == 0) Color(0xFF70757A) else Color(task.color))
+                    val baseColor = if (firstTag != null) Color(firstTag.color) else (if (task.color == 0) Color(0xFF4285F4) else Color(task.color))
                     val contentColor = if (isCompleted) Color(0xFF9AA0A6) else baseColor
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        // --- 左側：時刻・タイムラインインジケータ ---
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        // 左側：時間インジケーター
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(60.dp)
-                                .padding(top = 12.dp)
+                            modifier = Modifier.width(64.dp).padding(top = 8.dp)
                         ) {
-                            Text(
-                                text = startDateTime.format(timeFormatter),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isCompleted) Color.Gray else Color.Black
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isCompleted) Color(0xFF34A853) else if (isExpired) Color(0xFFD93025) else baseColor)
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = endDateTime.format(timeFormatter),
-                                fontSize = 11.sp,
-                                color = Color.Gray
-                            )
+                            if (task.isAllDay) {
+                                Text(text = "終日", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isCompleted) Color.Gray else Color(0xFF1A73E8))
+                            } else {
+                                Text(text = startDateTime.format(timeFormatter), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isCompleted) Color.Gray else Color.Black)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(if (isCompleted) Color(0xFF34A853) else if (isExpired) Color(0xFFD93025) else baseColor))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(text = endDateTime.format(timeFormatter), fontSize = 11.sp, color = Color(0xFF70757A))
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // --- 右側：予定のカード内容 ---
+                        // 右側：タスクカード
                         Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .clickable { onNavigateToTaskDetail(task.taskId) },
+                            modifier = Modifier.weight(1f).fillMaxWidth().clickable { onNavigateToTaskDetail(task.taskId) },
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isCompleted) Color(0xFFF1F3F4) else Color(0xFFF8F9FA)
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = if (isCompleted) Color(0xFFF1F3F4) else Color(0xFFF8F9FA)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                // 完了チェックボタン
+                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) {
                                 IconButton(
-                                    onClick = { viewModel.toggleTaskCompletion(item) },
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .padding(top = 2.dp)
+                                    onClick = { onToggleTaskCompletion(item) },
+                                    modifier = Modifier.size(24.dp).padding(top = 2.dp)
                                 ) {
                                     Icon(
                                         imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
@@ -181,7 +183,6 @@ fun DateDetailScreen(
 
                                 Spacer(modifier = Modifier.width(12.dp))
 
-                                // 情報表示カラム
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         if (isCompleted || isExpired) {
@@ -199,7 +200,6 @@ fun DateDetailScreen(
                                                 )
                                             }
                                         }
-
                                         Text(
                                             text = task.title,
                                             fontSize = 15.sp,
@@ -211,60 +211,29 @@ fun DateDetailScreen(
                                         )
                                     }
 
-                                    // タグ情報一覧
-                                    if (item.tags.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(6.dp))
+                                    // ★ リファクタリング：remindMinutes != null を reminders.isNotEmpty() に変更
+                                    val hasReminder = task.reminderType != null || task.reminderOffsetMinutes != null
 
+                                    if (item.tags.isNotEmpty() || hasReminder) {
+                                        Spacer(modifier = Modifier.height(6.dp))
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             item.tags.forEach { tag ->
-                                                val tagColor = Color(tag.color)
-                                                val tagBgColor = if (isCompleted) Color(0xFFE8EAED) else tagColor.copy(alpha = 0.12f)
-                                                val hasIcon = !tag.icon.isNullOrBlank()
-
-                                                Row(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(tagBgColor)
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    // ★ 修正：分離されたファイルにある共通の「TagIconBadge」に完全置換！
-                                                    if (hasIcon) {
-                                                        TagIconBadge(
-                                                            tag = tag,
-                                                            size = 14.dp,     // チップ内に綺麗に収まるミニサイズ
-                                                            iconSize = 10.dp
-                                                        )
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                    }
-
-                                                    Text(
-                                                        text = tag.name,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = if (isCompleted) Color(0xFF80868B) else Color(0xFF3C4043)
-                                                    )
-                                                }
+                                                TagLabel(tag = tag, textSize = 10.sp, isSelected = !isCompleted)
                                             }
-
-                                            Icon(
-                                                imageVector = Icons.Default.Notifications,
-                                                contentDescription = "通知あり",
-                                                tint = Color(0xFF5F6368),
-                                                modifier = Modifier.size(14.dp)
-                                            )
+                                            if (hasReminder) {
+                                                Icon(imageVector = Icons.Default.Notifications, contentDescription = "通知あり", tint = Color(0xFF5F6368), modifier = Modifier.size(14.dp))
+                                            }
                                         }
                                     }
 
-                                    // 3. メモ部分
                                     if (!task.memo.isNullOrEmpty()) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
-                                            text = task.memo ?: "",
+                                            text = task.memo,
                                             fontSize = 12.sp,
                                             color = if (isCompleted) Color(0xFF9AA0A6) else Color(0xFF5F6368),
                                             maxLines = 3,
@@ -280,4 +249,68 @@ fun DateDetailScreen(
             }
         }
     }
+}
+
+// --- ★ Compose Preview ---
+
+@Preview(showBackground = true, name = "予定あり表示")
+@Composable
+fun DateDetailContentPreview() {
+    val dummyTags = listOf(
+        Tag(tagId = 1L, name = "重要", color = Color(0xFFE53935).toArgb(), icon = null),
+        Tag(tagId = 2L, name = "仕事", color = Color(0xFF1E88E5).toArgb(), icon = null)
+    )
+
+    val dummyTasks = listOf(
+        TaskWithTags(
+            task = Task(
+                taskId = 1L,
+                title = "チームミーティング",
+                startTime = Instant.now().epochSecond,
+                endTime = Instant.now().plusSeconds(3600).epochSecond,
+                memo = "議題：プロジェクトのロードマップについて議論します。",
+                color = Color(0xFF4285F4).toArgb(),
+                attachmentPath = "",
+                url = "",
+                locationName = "筑波大学",
+                locationAddress = "茨城県つくば市天王台1-1-1",
+                isAutoCompleted = false,
+                completeState = "INCOMPLETE",
+                // ★ 修正：新しいプロパティに置き換え
+                reminderType = "BEFORE",
+                reminderOffsetMinutes = 10,
+                reminderDayOffset = null,
+                reminderHour = null,
+                reminderMinute = null,
+                dayCountTarget = null,
+                templateId = null,
+                isAllDay = false
+            ),
+            tags = dummyTags
+        )
+    )
+
+    DateDetailContent(
+        targetDate = LocalDate.now(),
+        dateMillis = System.currentTimeMillis(),
+        dayTasks = dummyTasks,
+        onNavigateBack = {},
+        onNavigateToTaskDetail = {},
+        onNavigateToCreateTask = {},
+        onToggleTaskCompletion = {}
+    )
+}
+
+@Preview(showBackground = true, name = "予定なし (Empty) 表示")
+@Composable
+fun DateDetailContentEmptyPreview() {
+    DateDetailContent(
+        targetDate = LocalDate.now(),
+        dateMillis = System.currentTimeMillis(),
+        dayTasks = emptyList(),
+        onNavigateBack = {},
+        onNavigateToTaskDetail = {},
+        onNavigateToCreateTask = {},
+        onToggleTaskCompletion = {}
+    )
 }

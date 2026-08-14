@@ -3,7 +3,7 @@ package com.example.calendar.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.calendar.data.entity.Tag
-import com.example.calendar.data.entity.TaskWithTags
+import com.example.calendar.data.relation.TaskWithTags
 import com.example.calendar.data.repository.TagRepository
 import com.example.calendar.data.repository.TaskRepository
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,7 +25,7 @@ class TaskListViewModel(
         )
 
     // ★ 永続化：タグ一覧もRepositoryからリアルタイム取得
-    val allTags: StateFlow<List<Tag>> = tagRepository.allTags
+    val allTags: StateFlow<List<Tag>> = tagRepository.getAllTags()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -51,7 +51,13 @@ class TaskListViewModel(
     // ★ 新設：新しいタグをデータベースに直接保存する（一覧画面のクイック作成用）
     fun createTag(tag: Tag) {
         viewModelScope.launch {
-            tagRepository.insertTag(tag)
+            tagRepository.createTag(tag)
+        }
+    }
+
+    fun updateTagOrder(tags: List<Tag>) {
+        viewModelScope.launch {
+            tagRepository.updateTagOrder(tags)
         }
     }
 }

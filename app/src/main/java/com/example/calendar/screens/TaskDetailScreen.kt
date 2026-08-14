@@ -1,5 +1,7 @@
 package com.example.calendar.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,15 +20,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.calendar.data.relation.TaskWithTags
+import com.example.calendar.data.entity.ChecklistItem
 import com.example.calendar.viewmodel.TaskDetailViewModel
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId // ★ 追加
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 
@@ -35,18 +39,17 @@ import java.util.*
 fun TaskDetailScreen(
     taskId: Long,
     viewModel: TaskDetailViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToEditTask: (Long) -> Unit = {}
 ) {
-    // 画面起動時に該当タスクの情報をロード
     LaunchedEffect(taskId) {
         viewModel.loadTaskDetail(taskId)
     }
 
     val itemWithTags = viewModel.currentTaskWithTags
     val checklistItems = viewModel.checklistState
-    val timeFormatter = remember { DateTimeFormatter.ofPattern("yyyy/MM/dd（E） HH:mm", Locale.JAPANESE) }
+    val context = LocalContext.current
 
-    // ロード中のフォールバック処理
     if (itemWithTags == null) {
         Scaffold(containerColor = Color.White) { innerPadding ->
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
@@ -56,14 +59,43 @@ fun TaskDetailScreen(
         return
     }
 
+    TaskDetailContent(
+        itemWithTags = itemWithTags,
+        checklistItems = checklistItems,
+        onNavigateBack = onNavigateBack,
+        onDeleteTask = {
+            viewModel.deleteTask(
+                context = context,
+                onSuccess = onNavigateBack
+            )
+        },
+        onToggleTaskCompletion = {
+            viewModel.toggleTaskCompletion(context)
+        },
+        onToggleChecklistItem = { index, checked -> viewModel.toggleChecklistItem(index, checked) },
+        onNavigateToEditTask = { onNavigateToEditTask(taskId) }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TaskDetailContent(
+    itemWithTags: TaskWithTags,
+    checklistItems: List<ChecklistItem>,
+    onNavigateBack: () -> Unit,
+    onDeleteTask: () -> Unit,
+    onToggleTaskCompletion: () -> Unit,
+    onToggleChecklistItem: (Int, Boolean) -> Unit,
+    onNavigateToEditTask: () -> Unit
+) {
+    val context = LocalContext.current
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("yyyy/MM/dd（E） HH:mm", Locale.JAPANESE) }
     val task = itemWithTags.task
     val isCompleted = task.completeState == "COMPLETED"
 
-    // タグがある場合は第一タグの色、なければタスクカラーを基準にする
     val mainTag = itemWithTags.tags.firstOrNull()
     val baseColor = if (mainTag != null) Color(mainTag.color) else (if (task.color == 0) Color(0xFF1A73E8) else Color(task.color))
 
-    // ★ 修正（67行目、70行目付近）：Long(EpochSecond) をシステムローカルタイムゾーン基準で LocalDateTime に復元
     val startDateTime = remember(task.startTime) {
         LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneId.systemDefault())
     }
@@ -71,7 +103,6 @@ fun TaskDetailScreen(
         LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneId.systemDefault())
     }
 
-    // メイン情報カード用のアイコントグル
     val mainIcon = when (mainTag?.icon) {
         "Book" -> Icons.Default.Book
         "ErrorOutline" -> Icons.Default.ErrorOutline
@@ -81,21 +112,28 @@ fun TaskDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("予定の詳細", fontSize = 20.sp, fontWeight = FontWeight.Bold) },
+                title = { Text("予定の詳細", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "戻る", tint = Color.Black)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.deleteTask(onSuccess = onNavigateBack) }) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "削除")
-                    }
-                    IconButton(onClick = { /* その他メニュー */ }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "メニュー")
+                    // ★ ここにあった「編集」TextButtonを削除しました！
+                    IconButton(onClick = onDeleteTask) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "削除", tint = Color.DarkGray)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onNavigateToEditTask,
+                containerColor = Color(0xFF1A73E8),
+                contentColor = Color.White,
+                icon = { Icon(Icons.Default.Edit, contentDescription = "編集") },
+                text = { Text("編集する", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
             )
         },
         containerColor = Color(0xFFF9F9F9)
@@ -144,7 +182,7 @@ fun TaskDetailScreen(
                     }
 
                     OutlinedButton(
-                        onClick = { viewModel.toggleTaskCompletion() },
+                        onClick = onToggleTaskCompletion,
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                         border = BorderStroke(1.dp, Color(0xFF1A73E8))
@@ -175,24 +213,20 @@ fun TaskDetailScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(mainIcon, contentDescription = null, tint = baseColor, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = task.title,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                color = if (isCompleted) Color.Gray else Color.Black
-                            )
-                        }
-                        Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(20.dp))
+                        Icon(mainIcon, contentDescription = null, tint = baseColor, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = task.title,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                            color = if (isCompleted) Color.Gray else Color.Black
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     HorizontalDivider(color = Color(0xFFF0F0F0))
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -226,13 +260,19 @@ fun TaskDetailScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    TimeRowMock(label = "開始", timeStr = startDateTime.format(timeFormatter))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    TimeRowMock(label = "終了", timeStr = endDateTime.format(timeFormatter))
+                    TimeDisplayRow(
+                        label = "開始",
+                        timeStr = if (task.isAllDay) startDateTime.format(DateTimeFormatter.ofPattern("yyyy/MM/dd（E） 終日", Locale.JAPANESE)) else startDateTime.format(timeFormatter)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TimeDisplayRow(
+                        label = "終了",
+                        timeStr = if (task.isAllDay) endDateTime.format(DateTimeFormatter.ofPattern("yyyy/MM/dd（E） 終日", Locale.JAPANESE)) else endDateTime.format(timeFormatter)
+                    )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = Color(0xFFF0F0F0))
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -245,83 +285,63 @@ fun TaskDetailScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
+                                .background(Color(0xFFF8F9FA), RoundedCornerShape(8.dp))
                                 .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(8.dp))
                                 .padding(12.dp)
                         ) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                                Text(
-                                    text = if (task.memo.isNullOrEmpty()) "メモはありません" else task.memo ?: "",
-                                    fontSize = 14.sp,
-                                    color = if (task.memo.isNullOrEmpty()) Color.LightGray else Color.Black,
-                                    lineHeight = 20.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
-                            }
+                            Text(
+                                text = if (task.memo.isNullOrEmpty()) "メモはありません" else task.memo ?: "",
+                                fontSize = 14.sp,
+                                color = if (task.memo.isNullOrEmpty()) Color.LightGray else Color.Black,
+                                lineHeight = 20.sp
+                            )
                         }
                     }
                 }
             }
 
             // --- 【3】チェックリストカード ---
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CheckBox, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("チェックリスト", fontSize = 14.sp, color = Color.Gray)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Column(modifier = Modifier.border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(8.dp))) {
-                        checklistItems.forEachIndexed { index, item ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = item.isChecked,
-                                    onCheckedChange = { checked -> viewModel.toggleChecklistItem(index, checked) },
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = item.text,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.weight(1f),
-                                    textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None,
-                                    color = if (item.isChecked) Color.Gray else Color.Black
-                                )
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.DragHandle, contentDescription = "並び替え", tint = Color.LightGray, modifier = Modifier.size(18.dp))
-                                    Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
-                                    Icon(Icons.Default.DeleteOutline, contentDescription = "削除", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            if (index < checklistItems.size - 1) {
-                                HorizontalDivider(color = Color(0xFFE0E0E0))
-                            }
+            if (checklistItems.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckBox, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("チェックリスト", fontSize = 14.sp, color = Color.Gray)
                         }
 
-                        HorizontalDivider(color = Color(0xFFE0E0E0))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { /* 項目追加アクション */ }
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("項目を追加", fontSize = 14.sp, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Column(modifier = Modifier.border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(8.dp))) {
+                            checklistItems.forEachIndexed { index, item ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = item.isChecked,
+                                        onCheckedChange = { checked -> onToggleChecklistItem(index, checked) },
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = item.text,
+                                        fontSize = 14.sp,
+                                        modifier = Modifier.weight(1f),
+                                        textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None,
+                                        color = if (item.isChecked) Color.Gray else Color.Black
+                                    )
+                                }
+                                if (index < checklistItems.size - 1) {
+                                    HorizontalDivider(color = Color(0xFFE0E0E0))
+                                }
+                            }
                         }
                     }
                 }
@@ -334,28 +354,113 @@ fun TaskDetailScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ExtensionRowMock(Icons.Default.AttachFile, "添付ファイル", task.attachmentPath ?: "なし", isLink = task.attachmentPath != null)
-                    ExtensionRowMock(Icons.Default.Link, "URL", task.url ?: "なし", isLink = task.url != null)
 
-                    val locationString = if (task.latitude != null && task.longitude != null) {
-                        "緯度: ${task.latitude}, 経度: ${task.longitude}"
-                    } else {
-                        "なし"
+                    val hasAttachment = !task.attachmentPath.isNullOrEmpty()
+                    ExtensionRowMock(
+                        icon = Icons.Default.AttachFile,
+                        label = "添付ファイル",
+                        content = if (hasAttachment) "ファイルを開く" else "なし",
+                        isLink = hasAttachment,
+                        onRowClick = {
+                            if (hasAttachment) {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        data = Uri.parse(task.attachmentPath)
+                                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) { }
+                            }
+                        }
+                    )
+
+                    val hasUrl = !task.url.isNullOrEmpty()
+                    ExtensionRowMock(
+                        icon = Icons.Default.Link,
+                        label = "リンク・場所",
+                        content = if (hasUrl) "リンクを開く" else "なし",
+                        isLink = hasUrl,
+                        onRowClick = {
+                            if (hasUrl) {
+                                try {
+                                    val urlString = if (!task.url.startsWith("http://") && !task.url.startsWith("https://")) "https://${task.url}" else task.url
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlString))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) { }
+                            }
+                        }
+                    )
+
+                    val hasLocation = !task.locationName.isNullOrBlank()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = hasLocation) {
+                                val query = Uri.encode(task.locationName)
+
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("geo:0,0?q=$query")
+                                )
+
+                                context.startActivity(intent)
+                            },
+                        verticalAlignment = Alignment.Top
+                    ) {
+
+                        Icon(
+                            Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Text(
+                            "場所",
+                            fontSize = 14.sp,
+                            modifier = Modifier.width(60.dp)
+                        )
+
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+
+                            Text(
+                                text = task.locationName ?: "なし",
+                                fontSize = 14.sp,
+                                color =
+                                    if (hasLocation)
+                                        Color(0xFF1A73E8)
+                                    else
+                                        Color.Gray,
+
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            if (!task.locationAddress.isNullOrBlank()) {
+
+                                Spacer(Modifier.height(2.dp))
+
+                                Text(
+                                    text = task.locationAddress!!,
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
                     }
-                    ExtensionRowMock(Icons.Default.LocationOn, "位置情報", locationString, isLink = task.latitude != null)
 
-                    // ★ 修正：システムローカル時間の現在時刻を基準に比較
                     val daysLeft = if (endDateTime.isAfter(LocalDateTime.now(ZoneId.systemDefault()))) "実施中" else "期限終了"
                     ExtensionRowMock(Icons.Default.CalendarMonth, "ステータス期限", "目標設定時間：${endDateTime.format(timeFormatter)} ($daysLeft)", textColor = baseColor)
 
-                    // 色インジケータ
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Palette, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Text("表示カラー", fontSize = 14.sp, color = Color.Black, modifier = Modifier.weight(1f))
                         Box(modifier = Modifier.size(16.dp).clip(CircleShape).background(baseColor))
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
                     }
 
                     ExtensionRowMock(
@@ -370,7 +475,7 @@ fun TaskDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 12.dp, start = 4.dp, end = 4.dp),
+                    .padding(top = 8.dp, bottom = 64.dp, start = 4.dp, end = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text("タスク内部ID：${task.taskId}", fontSize = 12.sp, color = Color.Gray)
@@ -380,58 +485,68 @@ fun TaskDetailScreen(
     }
 }
 
-data class ChecklistItem(val id: Int, val text: String, val isChecked: Boolean)
+// --- 画面内で使用する補助コンポーネント ---
 
 @Composable
-fun MockTagChip(text: String, bgColor: Color, textColor: Color, icon: ImageVector? = null) {
-    Row(
-        modifier = Modifier
-            .background(bgColor, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(14.dp))
-            Spacer(modifier = Modifier.width(4.dp))
-        }
-        Text(text = text, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-fun TimeRowMock(label: String, timeStr: String) {
+fun TimeDisplayRow(label: String, timeStr: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Default.AccessTime, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = label, fontSize = 14.sp, color = Color.Gray, modifier = Modifier.width(48.dp))
+        Text(text = timeStr, fontSize = 14.sp, color = Color.Black, fontWeight = FontWeight.Medium)
+    }
+}
 
+@Composable
+fun MockTagChip(
+    text: String,
+    bgColor: Color,
+    textColor: Color,
+    icon: ImageVector
+) {
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(12.dp)
+    ) {
         Row(
-            modifier = Modifier
-                .weight(1f)
-                .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(6.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = timeStr, fontSize = 14.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color.DarkGray, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color.DarkGray)
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(text = text, color = textColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-fun ExtensionRowMock(icon: ImageVector, label: String, content: String, isLink: Boolean = false, textColor: Color = Color.Black) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+fun ExtensionRowMock(
+    icon: ImageVector,
+    label: String,
+    content: String,
+    isLink: Boolean = false,
+    textColor: Color = Color.Black,
+    onRowClick: () -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = isLink, onClick = onRowClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Icon(icon, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 12.sp, color = Color.Gray)
-            Text(content, fontSize = 14.sp, color = if (isLink) Color(0xFF1A73E8) else textColor, fontWeight = if (isLink) FontWeight.Medium else FontWeight.Normal)
-        }
-        Icon(Icons.Default.Edit, contentDescription = "編集", tint = Color.DarkGray, modifier = Modifier.size(18.dp))
+        Text(label, fontSize = 14.sp, color = Color.Black, modifier = Modifier.weight(1f))
+        Text(
+            text = content,
+            fontSize = 13.sp,
+            color = if (isLink) Color(0xFF1A73E8) else textColor,
+            fontWeight = if (isLink) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

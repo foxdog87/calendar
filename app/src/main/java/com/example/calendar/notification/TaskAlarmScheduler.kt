@@ -6,60 +6,57 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.provider.Settings
 import android.text.format.DateFormat
 import android.util.Log
 import com.example.calendar.data.entity.Task
-import com.example.calendar.notification.TaskAlarmReceiver
+import java.time.Instant
+import java.time.ZoneId
 
-class TaskAlarmScheduler(private val context: Context) {
-    private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+class TaskAlarmScheduler(
+    private val context: Context
+) {
+
+    private val alarmManager =
+        context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     @SuppressLint("ScheduleExactAlarm")
     fun schedule(task: Task) {
 
-        val remindMinutes = task.remindMinutes ?: return
+        val now = System.currentTimeMillis()
 
-        val startMillis = task.startTime * 1000
-        val remindMillis = remindMinutes * 60 * 1000
-        val triggerAtMillis = startMillis - remindMillis
+        // 1. Entityから型安全なドメインモデルへ変換
+        val reminderSetting = task.getReminderSetting()
 
-        Log.d("ALARM_TEST", "schedule called")
-        Log.d("ALARM_TEST", "taskId=${task.taskId}")
-        Log.d("ALARM_TEST", "title=${task.title}")
-        Log.d("ALARM_TEST", "remindMinutes=$remindMinutes")
-        Log.d("ALARM_TEST", "startTime=${task.startTime}")
-        Log.d("ALARM_TEST", "triggerAtMillis=$triggerAtMillis")
-
-        Log.d(
-            "ALARM_TEST",
-            "triggerDate=${
-                DateFormat.format(
-                    "yyyy/MM/dd HH:mm:ss",
-                    triggerAtMillis
-                )
-            }"
-        )
-
-        Log.d(
-            "ALARM_TEST",
-            "currentDate=${
-                DateFormat.format(
-                    "yyyy/MM/dd HH:mm:ss",
-                    System.currentTimeMillis()
-                )
-            }"
-        )
-
-        if (triggerAtMillis <= System.currentTimeMillis()) {
-            Log.d("ALARM_TEST", "alarm skipped because trigger time is in the past")
+        // 通知設定なしの場合は即終了
+        if (reminderSetting is ReminderSetting.None) {
             return
+        }
+
+        // 2. ドメインモデルを使ってトリガー時間を計算
+        val triggerAtMillis = calculateTriggerTime(task, reminderSetting) ?: return
+
+        // 過去時刻の場合は登録しない
+        if (triggerAtMillis <= now) {
+            Log.d("ALARM_TEST", "通知時刻が過去 taskId=${task.taskId}")
+            return
+        }
+
+        Log.d("ALARM_TEST", "schedule taskId=${task.taskId}")
+        Log.d("ALARM_TEST", "trigger=${DateFormat.format("yyyy/MM/dd HH:mm:ss", triggerAtMillis)}")
+
+        // Android12 Exact Alarm確認
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (!alarmManager.canScheduleExactAlarms()) {
+                Log.e("ALARM_TEST", "Exact Alarm権限なし")
+                return
+            }
         }
 
         val intent = Intent(context, TaskAlarmReceiver::class.java).apply {
             putExtra("TASK_ID", task.taskId)
             putExtra("TASK_TITLE", task.title)
-            putExtra("REMIND_MINUTES", remindMinutes)
+            // Receiver側での表示用に、nullにならないよう0をフォールバック
+            putExtra("REMIND_MINUTES", task.reminderOffsetMinutes ?: 0)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -68,13 +65,6 @@ class TaskAlarmScheduler(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Log.d(
-                "ALARM_TEST",
-                "canScheduleExact=${alarmManager.canScheduleExactAlarms()}"
-            )
-        }
 
         alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
@@ -85,6 +75,44 @@ class TaskAlarmScheduler(private val context: Context) {
         Log.d("ALARM_TEST", "alarm registered")
     }
 
+    /**
+     * 通知時間計算
+     * Domain Model (ReminderSetting) の型安全な when 分岐で計算する。
+     * isAllDay などの泥臭い分岐は不要になり、設定そのものが意味を持つ。
+     */
+    private fun calculateTriggerTime(task: Task, setting: ReminderSetting): Long? {
+        val zone = ZoneId.systemDefault()
+        val startDateTime = Instant.ofEpochSecond(task.startTime).atZone(zone).toLocalDateTime()
+
+        return when (setting) {
+            is ReminderSetting.None -> null
+
+            is ReminderSetting.AtStartTime -> {
+                startDateTime.atZone(zone).toInstant().toEpochMilli()
+            }
+
+            is ReminderSetting.Before -> {
+                startDateTime
+                    .minusMinutes(setting.minutes.toLong())
+                    .atZone(zone)
+                    .toInstant()
+                    .toEpochMilli()
+            }
+
+            is ReminderSetting.DayBefore -> {
+                startDateTime
+                    .minusDays(setting.daysBack.toLong())
+                    .withHour(setting.hour)
+                    .withMinute(setting.minute)
+                    .withSecond(0)
+                    .withNano(0)
+                    .atZone(zone)
+                    .toInstant()
+                    .toEpochMilli()
+            }
+        }
+    }
+
     fun cancel(task: Task) {
         val intent = Intent(context, TaskAlarmReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
@@ -93,10 +121,11 @@ class TaskAlarmScheduler(private val context: Context) {
             intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )
-        // 既存の登録があれば解除
+
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
             pendingIntent.cancel()
+            Log.d("ALARM_TEST", "alarm cancelled taskId=${task.taskId}")
         }
     }
 }

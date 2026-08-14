@@ -12,13 +12,23 @@ data class Template(
     val description: String?,
     val color: Int,
     val memo: String?,
-    val checkList: String?,
+    val locationName: String? = null,
+    val locationAddress: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val dayCountTarget: Long?,
     val url: String?,
     val attachmentPath: String?,
     val isAutoCompleted: Boolean,
-    // ★ 修正：こちらも同様に null を初期値（通知なし）にする
-    val remindMinutes: Int? = null
+
+    val reminderType: String? = null,
+    val reminderOffsetMinutes: Int? = null,
+    val reminderDayOffset: Int? = null,
+    val reminderHour: Int? = null,
+    val reminderMinute: Int? = null,
+
+    val position: Int = 0,
+
+    // ▼ 追加：最後にタスク作成へ適用した時刻(Unix time ms)。未使用ならnull。
+    val lastUsedAt: Long? = null
 )

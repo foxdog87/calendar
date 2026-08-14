@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools" >
 
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+
+    <!-- 権限 -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
 
     <application
         android:allowBackup="true"
@@ -14,35 +20,53 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Calendar" >
+        android:theme="@style/Theme.Calendar">
+
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Calendar" >
+            android:theme="@style/Theme.Calendar">
+
+
             <intent-filter>
+
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+
             </intent-filter>
+
+
         </activity>
 
+
+
+        <!-- 通常のタスク通知 -->
         <receiver
             android:name="com.example.calendar.notification.TaskAlarmReceiver"
             android:enabled="true"
             android:exported="false" />
 
+
+
+        <!-- 端末再起動後の通知復元 -->
         <receiver
             android:name="com.example.calendar.notification.BootReceiver"
             android:enabled="true"
-            android:exported="true">
+            android:exported="false">
+
             <intent-filter>
+
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <category android:name="android.intent.category.DEFAULT" />
+
             </intent-filter>
+
         </receiver>
 
+
     </application>
+
 
 </manifest>

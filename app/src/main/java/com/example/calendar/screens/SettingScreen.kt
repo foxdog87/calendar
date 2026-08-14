@@ -36,10 +36,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("設定", fontSize = 20.sp, fontWeight = FontWeight.Bold) },
+                title = { Text("設定", fontSize = 20.sp, fontWeight = FontWeight.Bold,color = Color(0xFF1C1B1F)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "戻る")
+                        Icon(Icons.Default.ArrowBack,tint = Color(0xFF1C1B1F), contentDescription = "戻る")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)

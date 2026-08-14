@@ -3,7 +3,7 @@ package com.example.calendar.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.calendar.data.dao.TaskDao
-import com.example.calendar.data.entity.TaskWithTags
+import com.example.calendar.data.relation.TaskWithTags
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
