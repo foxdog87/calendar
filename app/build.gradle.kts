@@ -4,14 +4,16 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.example.calendar"
+    namespace = "com.foxdog.strucalendar"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.calendar"
+        applicationId = "com.foxdog.strucalendar"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -42,6 +44,17 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    packaging {
+        resources {
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/NOTICE.txt"
+            excludes += "META-INF/*.kotlin_module"
+        }
     }
 }
 
@@ -82,4 +95,9 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
+    implementation("com.google.firebase:firebase-analytics")
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

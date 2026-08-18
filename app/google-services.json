@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "299597574264",
+    "project_id": "strucalendar",
+    "storage_bucket": "strucalendar.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:299597574264:android:25981cd7ac4d82705ebd8d",
+        "android_client_info": {
+          "package_name": "com.foxdog.strucalendar"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqP_PQUzS-BNYPRf6bXPzU8FT7CpzECmE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
