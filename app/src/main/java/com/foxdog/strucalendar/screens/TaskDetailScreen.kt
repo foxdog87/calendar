@@ -2,6 +2,7 @@ package com.foxdog.strucalendar.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -511,17 +512,20 @@ fun TaskDetailContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = hasLocation) {
-                                val query = Uri.encode(task.locationName)
-
-                                val intent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("geo:0,0?q=$query")
-                                )
-
-                                context.startActivity(intent)
+                                try {
+                                    val query = Uri.encode(task.locationName)
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("geo:0,0?q=$query")
+                                    )
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "地図アプリが見つかりませんでした", Toast.LENGTH_SHORT).show()
+                                }
                             },
                         verticalAlignment = Alignment.Top
                     ) {
+
 
                         Icon(
                             Icons.Default.LocationOn,

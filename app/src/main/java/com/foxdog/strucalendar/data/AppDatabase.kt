@@ -45,7 +45,7 @@ import com.foxdog.strucalendar.data.dao.TemplateDisplayOrderDao
         TemplateCustomFieldValue::class
     ],
     version = 21,
-    exportSchema = false
+    exportSchema = true
 )
 @TypeConverters(ReminderTypeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -72,17 +72,6 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        private val MIGRATION_9_10 = object : Migration(9, 10) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS template_display_orders (templateId INTEGER NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(templateId))"
-                )
-                db.execSQL(
-                    "INSERT OR IGNORE INTO template_display_orders (templateId, position) SELECT templateId, templateId - 1 FROM templates"
-                )
-            }
-        }
-
         fun getDatabase(
             context: Context,
             scope: CoroutineScope
@@ -95,8 +84,6 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "calendar_database"
                 )
-                    // ... (前略)
-
                     .addCallback(object : RoomDatabase.Callback() {
 
                         override fun onCreate(db: SupportSQLiteDatabase) {
