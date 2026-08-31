@@ -12,7 +12,7 @@ interface HolidayDao {
     @Query("SELECT * FROM holidays WHERE countryCode = :countryCode AND date LIKE :yearPrefix || '%'")
     suspend fun getHolidaysForYear(countryCode: String, yearPrefix: String): List<HolidayEntity>
 
-    // ★ 追加：特定の日付の祝日をすべての国から取得（優先順位はRepository側で決める）
+    // 特定の日付の祝日をすべての国から取得（優先順位はRepository側で決める）
     @Query("SELECT * FROM holidays WHERE date = :date")
     suspend fun getHolidaysForDate(date: String): List<HolidayEntity>
 

@@ -13,8 +13,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -46,6 +48,34 @@ class MainActivity : ComponentActivity() {
         return if (country.isNotBlank()) country.uppercase() else "JP"
     }
 
+    /**
+     * リマインダー通知をONにした瞬間にのみ呼ばれる想定の権限要求関数。
+     * 通知権限(Android 13+)が無ければリクエストし、正確なアラーム権限(Android 12+)が
+     * 無ければ設定画面へ遷移する。両方とも既に許可済みなら何もしない。
+     */
+    private fun ensureNotificationPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (!granted) {
+                requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -72,21 +102,10 @@ class MainActivity : ComponentActivity() {
             "targetTaskId=$notificationTaskId"
         )
 
-        // 1. Android 13以降の通常通知権限
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        // Android 12以降の「正確なアラーム（スケジュール通知）」の権限要求
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            if (!alarmManager.canScheduleExactAlarms()) {
-                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
-            }
-        }
+        // 通知権限・正確なアラーム権限は、ユーザーがタスク作成画面で
+        // リマインダー通知をONにした瞬間にのみ要求する（起動直後の権限ダイアログはUXを妨げるため廃止）。
+        // 具体的な要求処理は ensureNotificationPermissions() に委譲し、
+        // Compose側（ReminderSectionのスイッチ）からコールバック経由で呼び出す。
 
         enableEdgeToEdge()
 
@@ -99,7 +118,13 @@ class MainActivity : ComponentActivity() {
         val calendarPreferences = CalendarPreferences(applicationContext)
         val settingsRepository = SettingsRepository(applicationContext)
         val holidayRepository = HolidayRepository(database.holidayDao())
-        val deviceCountryCode = resolveDeviceCountryCode(applicationContext) // ★ 変更：命名をdeviceCountryCodeに統一
+        val calendarTagRepository = com.foxdog.strucalendar.data.repository.TagRepository(
+            tagDao = database.tagDao(),
+            tagDisplayOrderDao = database.tagDisplayOrderDao(),
+            taskTagDao = database.taskTagDao(),
+            tagCustomFieldDao = database.tagCustomFieldDao()
+        )
+        val deviceCountryCode = resolveDeviceCountryCode(applicationContext) // 命名をdeviceCountryCodeに統一
 
         setContent {
             val mainViewModel: CalendarViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
@@ -111,6 +136,7 @@ class MainActivity : ComponentActivity() {
                             calendarPreferences,
                             settingsRepository,
                             holidayRepository,
+                            calendarTagRepository,
                             deviceCountryCode
                         ) as T
                     }
@@ -123,6 +149,18 @@ class MainActivity : ComponentActivity() {
                 AppThemeMode.SYSTEM -> isSystemInDarkTheme()
                 AppThemeMode.LIGHT -> false
                 AppThemeMode.DARK -> true
+            }
+
+            // ステータスバー・ナビゲーションバーのアイコン色を、システムのテーマではなく
+            // アプリ自身が現在採用しているテーマ（useDarkTheme）に合わせて決定する。
+            // enableEdgeToEdge()の既定動作はシステムのライト/ダーク判定に依存するため、
+            // 「システムはライトのままアプリだけダークにする」場合にアイコンが
+            // 黒背景に黒文字で見えなくなる問題が発生していた。
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !useDarkTheme
+                    isAppearanceLightNavigationBars = !useDarkTheme
+                }
             }
 
             CalendarTheme(darkTheme = useDarkTheme) {
@@ -138,9 +176,10 @@ class MainActivity : ComponentActivity() {
                     templateDao = database.templateDao(),
                     templateTagDao = database.templateTagDao(),
                     templateDisplayOrderDao = database.templateDisplayOrderDao(),
-                    settingsRepository = settingsRepository, // ★ 追加：DateDetailViewModelへの配線に必要
+                    settingsRepository = settingsRepository, // DateDetailViewModelへの配線に必要
                     countryCode = deviceCountryCode,
                     tagCustomFieldDao = database.tagCustomFieldDao(),
+                    onNotificationPermissionNeeded = { ensureNotificationPermissions() },
                     initialTaskId = if (targetTaskId != -1L)
                         targetTaskId
                     else

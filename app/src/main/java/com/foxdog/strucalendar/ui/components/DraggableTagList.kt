@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -129,6 +130,7 @@ fun DraggableTagList(
     onTagClick: (Tag) -> Unit,
     onOrderChanged: (List<Tag>) -> Unit,
     onDeleteTagRequest: (Tag) -> Unit,
+    onEditTagRequest: (Tag) -> Unit,
     allTags: List<Tag> = tags
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -145,6 +147,8 @@ fun DraggableTagList(
     val itemCoordinates = remember { mutableMapOf<Long, LayoutCoordinates>() }
     var trashBounds by remember { mutableStateOf<Rect?>(null) }
     var isHoveringTrash by remember { mutableStateOf(false) }
+    var editBounds by remember { mutableStateOf<Rect?>(null) }
+    var isHoveringEdit by remember { mutableStateOf(false) }
 
     LaunchedEffect(tags) {
         if (draggedTagId == null) {
@@ -159,6 +163,7 @@ fun DraggableTagList(
         pointerPositionInRoot = null
         draggedStartBounds = null
         isHoveringTrash = false
+        isHoveringEdit = false
     }
 
     fun cancelDrag() {
@@ -195,7 +200,7 @@ fun DraggableTagList(
                                     itemCoordinates[tag.tagId] = coordinates
                                 }
                                 .graphicsLayer { alpha = if (isDragged) 0f else 1f }
-                                .clip(RoundedCornerShape(8.dp)) // ★ 変更：clickableより前に移動
+                                .clip(RoundedCornerShape(8.dp)) // clickableより前に移動
                                 .pointerInput(tag.tagId) {
                                     detectDragGestures(
                                         onDragStart = { startPosition ->
@@ -211,6 +216,7 @@ fun DraggableTagList(
                                             dragStartPointerInRoot = startInRoot
                                             pointerPositionInRoot = startInRoot
                                             isHoveringTrash = trashBounds?.contains(startInRoot) == true
+                                            isHoveringEdit = editBounds?.contains(startInRoot) == true
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
@@ -222,6 +228,7 @@ fun DraggableTagList(
                                             dragOffset = newOffset
                                             pointerPositionInRoot = pointer
                                             isHoveringTrash = trashBounds?.contains(pointer) == true
+                                            isHoveringEdit = editBounds?.contains(pointer) == true
                                         },
                                         onDragEnd = {
                                             val draggedId = draggedTagId
@@ -232,6 +239,11 @@ fun DraggableTagList(
                                                     orderedTags
                                                         .firstOrNull { it.tagId == draggedId }
                                                         ?.let(onDeleteTagRequest)
+                                                } else if (editBounds?.contains(pointer) == true) {
+                                                    orderedTags
+                                                        .firstOrNull { it.tagId == draggedId }
+                                                        ?.let(onEditTagRequest)
+                                                    orderedTags = tags
                                                 } else {
                                                     onOrderChanged(mergeReorderedSubsetIntoFullList(allTags, orderedTags))
                                                 }
@@ -241,7 +253,7 @@ fun DraggableTagList(
                                         onDragCancel = ::cancelDrag
                                     )
                                 }
-                                .clickable { onTagClick(tag) } // ★ 変更：clipより後ろに
+                                .clickable { onTagClick(tag) } // clipより後ろに
                         )
                     }
                 }
@@ -252,30 +264,62 @@ fun DraggableTagList(
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp)
-                        .height(60.dp)
-                        .onGloballyPositioned { coordinates ->
-                            trashBounds = coordinates.boundsInRoot()
-                        }
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isHoveringTrash) colorScheme.error else colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
+                        .padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "削除",
-                            tint = if (isHoveringTrash) colorScheme.onError else colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "ここにドロップして削除",
-                            color = if (isHoveringTrash) colorScheme.onError else colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(60.dp)
+                            .onGloballyPositioned { coordinates ->
+                                editBounds = coordinates.boundsInRoot()
+                            }
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isHoveringEdit) colorScheme.primary else colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "編集",
+                                tint = if (isHoveringEdit) colorScheme.onPrimary else colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ドロップして編集",
+                                color = if (isHoveringEdit) colorScheme.onPrimary else colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(60.dp)
+                            .onGloballyPositioned { coordinates ->
+                                trashBounds = coordinates.boundsInRoot()
+                            }
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isHoveringTrash) colorScheme.error else colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "削除",
+                                tint = if (isHoveringTrash) colorScheme.onError else colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ドロップして削除",
+                                color = if (isHoveringTrash) colorScheme.onError else colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

@@ -28,7 +28,7 @@ fun Modifier.bounceClick(
     showWave: Boolean = false,
     isWaveCircle: Boolean = true,
     waveCornerRadius: Dp = 0.dp,
-    waveExpansionSize: Dp = 24.dp, // ★ 追加：広がる幅を調整可能に
+    waveExpansionSize: Dp = 24.dp, // 広がる幅を調整可能に
     onClick: () -> Unit
 ) = composed {
     val scope = rememberCoroutineScope()
@@ -39,7 +39,7 @@ fun Modifier.bounceClick(
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val density = LocalDensity.current
-    val targetExpansionPx = with(density) { waveExpansionSize.toPx() } // ★ 追加した引数を使用
+    val targetExpansionPx = with(density) { waveExpansionSize.toPx() }
 
     this
         .graphicsLayer {

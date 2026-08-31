@@ -112,6 +112,15 @@ interface TaskDao {
     suspend fun getTaskIdsBefore(beforeEpoch: Long?, targetStates: List<String>): List<Long>
 
     @Query("""
+    UPDATE tasks
+    SET completeState = 'COMPLETED'
+    WHERE isAutoCompleted = 1
+    AND completeState != 'COMPLETED'
+    AND endTime <= :currentEpoch
+""")
+    suspend fun autoCompleteExpiredTasks(currentEpoch: Long)
+
+    @Query("""
     DELETE FROM tasks
     WHERE taskId IN (:taskIds)
 """)
@@ -124,7 +133,7 @@ interface TaskDao {
 """)
     suspend fun setPinned(taskId: Long, isPinned: Boolean)
 
-    // 繰り返しシリーズの一覧をグループ化して取得
+
     @Query("""
         SELECT
             recurrenceGroupId AS recurrenceGroupId,
@@ -133,6 +142,7 @@ interface TaskDao {
             MIN(recurrenceIntervalDays) AS recurrenceIntervalDays,
             MIN(recurrenceNth) AS recurrenceNth,
             MIN(recurrenceWeekday) AS recurrenceWeekday,
+            MIN(recurrenceWeekdays) AS recurrenceWeekdays,
             MIN(recurrenceEndDate) AS recurrenceEndDate,
             COUNT(*) AS occurrenceCount,
             MIN(startTime) AS firstStartTime
@@ -143,7 +153,7 @@ interface TaskDao {
     """)
     suspend fun getRecurrenceSeriesSummaries(): List<RecurrenceSeriesSummary>
 
-    // 指定した複数の recurrenceGroupId に属するタスクIDを全部取得
+
     @Query("""
         SELECT taskId
         FROM tasks
@@ -151,9 +161,7 @@ interface TaskDao {
     """)
     suspend fun getTaskIdsByRecurrenceGroupIds(groupIds: List<String>): List<Long>
 
-    // ★ 追加：指定した単一の recurrenceGroupId に属する全タスク（フルエンティティ）を取得。
-    // TaskDetailScreenで「この繰り返し予定をすべて削除する」を選んだ際、
-    // アラーム解除のためにタスクの全カラム（reminder関連など）が必要になるため。
+
     @Query("""
         SELECT *
         FROM tasks

@@ -40,7 +40,7 @@ fun DraggableTemplateList(
     fieldBackgroundColor: Color,
     templateIconColor: Color,
 ) {
-    val colorScheme = MaterialTheme.colorScheme // ★ 追加
+    val colorScheme = MaterialTheme.colorScheme
 
     var orderedTemplates by remember { mutableStateOf(templates) }
     var draggedId by remember { mutableStateOf<Long?>(null) }
@@ -88,7 +88,7 @@ fun DraggableTemplateList(
                         Text(
                             text = template.title,
                             fontSize = 14.sp,
-                            color = colorScheme.onSurface, // ★ 修正：Color(0xFF1C1B1F) → テーマ追従
+                            color = colorScheme.onSurface, // Color(0xFF1C1B1F) → テーマ追従
                             modifier = Modifier.weight(1f)
                         )
 
@@ -101,7 +101,7 @@ fun DraggableTemplateList(
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = "テンプレートを編集",
-                                tint = colorScheme.onSurfaceVariant, // ★ 修正：Color(0xFF5F6368) → テーマ追従
+                                tint = colorScheme.onSurfaceVariant, // Color(0xFF5F6368) → テーマ追従
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -115,7 +115,7 @@ fun DraggableTemplateList(
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "テンプレートを削除",
-                                tint = colorScheme.error, // ★ 修正：Color(0xFFD93025) → テーマのerror色
+                                tint = colorScheme.error, // Color(0xFFD93025) → テーマのerror色
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -124,7 +124,7 @@ fun DraggableTemplateList(
                         Icon(
                             Icons.Default.DragHandle,
                             contentDescription = "並び替え",
-                            tint = colorScheme.onSurfaceVariant, // ★ 修正：Color(0xFF9AA0A6) → テーマ追従
+                            tint = colorScheme.onSurfaceVariant, // Color(0xFF9AA0A6) → テーマ追従
                             modifier = Modifier
                                 .padding(start = 4.dp, end = 6.dp)
                                 .pointerInput(template.templateId) {
@@ -184,13 +184,13 @@ fun DraggableTemplateList(
                 Text(
                     text = draggedTemplate.title,
                     fontSize = 14.sp,
-                    color = colorScheme.onSurface, // ★ 修正：Color(0xFF1C1B1F) → テーマ追従
+                    color = colorScheme.onSurface, // Color(0xFF1C1B1F) → テーマ追従
                     modifier = Modifier.weight(1f)
                 )
                 Icon(
                     Icons.Default.DragHandle,
                     contentDescription = null,
-                    tint = colorScheme.onSurfaceVariant // ★ 修正：Color(0xFF9AA0A6) → テーマ追従
+                    tint = colorScheme.onSurfaceVariant // Color(0xFF9AA0A6) → テーマ追従
                 )
             }
         }

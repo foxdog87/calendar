@@ -54,11 +54,13 @@ fun TaskCard(
     val calColors = MaterialTheme.calendarColors
 
     val task = item.task
-    val isCompleted = task.completeState == "COMPLETED"
 
     val startDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneId.systemDefault())
     val endDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneId.systemDefault())
-    val isExpired = !isCompleted && !task.isAllDay && endDateTime.isBefore(LocalDateTime.now())
+
+    val isCompleted = task.completeState == "COMPLETED"
+    val isExpired = !isCompleted && !task.isAutoCompleted && !task.isAllDay && endDateTime.isBefore(LocalDateTime.now())
+
 
     val firstTag = item.tags.firstOrNull()
     val baseColor = if (firstTag != null) Color(firstTag.color) else (if (task.color == 0) colorScheme.primary else Color(task.color))

@@ -2,7 +2,7 @@ package com.foxdog.strucalendar.notification
 
 import com.foxdog.strucalendar.data.entity.Task
 
-// ★ UI・ドメイン・スケジューラーで共通利用する「真の通知モデル」
+// UI・ドメイン・スケジューラーで共通利用する「真の通知モデル」
 sealed interface ReminderSetting {
     data object None : ReminderSetting
     data object AtStartTime : ReminderSetting
@@ -10,7 +10,7 @@ sealed interface ReminderSetting {
     data class DayBefore(val daysBack: Int = 1, val hour: Int, val minute: Int) : ReminderSetting
 }
 
-// ★ Entity(DB) -> Domain(UI) への変換マッパー
+// Entity(DB) -> Domain(UI) への変換マッパー
 fun Task.getReminderSetting(): ReminderSetting {
     return when (this.reminderType) {
         "NONE", null -> ReminderSetting.None

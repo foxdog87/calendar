@@ -21,7 +21,7 @@ fun CalendarScreen(
     val currentMonth by viewModel.currentMonth
     val selectedDateTime by viewModel.selectedDate
     val tasksByDate by viewModel.tasksByDate.collectAsState()
-    val holidayMap by viewModel.holidayMap.collectAsState() // ★ 追加
+    val holidayMap by viewModel.holidayMap.collectAsState()
     val displayMode by viewModel.displayMode
     val showDisplayModeMenu by viewModel.showDisplayModeMenu
     val currentWeekStart by viewModel.currentWeekStart
@@ -34,7 +34,7 @@ fun CalendarScreen(
         currentWeekStart = currentWeekStart,
         selectedDate = selectedDate,
         tasksByDate = tasksByDate,
-        holidayMap = holidayMap, // ★ 追加
+        holidayMap = holidayMap,
         displayMode = displayMode,
         showDisplayModeMenu = showDisplayModeMenu,
         weekStartDay = settings.weekStartDay,
@@ -63,6 +63,22 @@ fun CalendarScreen(
         onNavigateToTaskDetail = onNavigateToTaskDetail,
         onToggleTaskCompletion = { taskItem ->
             viewModel.toggleTaskCompletion(taskItem)
-        }
+        },
+        showAllTutorialsCompletedDialog = viewModel.showAllTutorialsCompletedDialog,
+        onDismissAllTutorialsCompletedDialog = { viewModel.dismissAllTutorialsCompletedDialog() },
+        allTags = viewModel.allTags.collectAsState().value,
+        selectedFilterTagIds = viewModel.selectedFilterTagIds.collectAsState().value,
+        onToggleFilterTag = { tagId -> viewModel.toggleFilterTag(tagId) },
+        onResetTagFilter = { viewModel.resetTagFilter() },
+        filterIsAndSearch = viewModel.filterIsAndSearch.collectAsState().value,
+        onSetFilterIsAndSearch = { isAnd -> viewModel.setFilterIsAndSearch(isAnd) },
+        onDeleteTag = { tag -> viewModel.deleteTag(tag) },
+        onCreateTag = { tag, customFieldNames -> viewModel.createTag(tag, customFieldNames) },
+        onUpdateTag = { tag, customFieldNames -> viewModel.updateTag(tag, customFieldNames) },
+        onLoadCustomFieldsForTag = { tagId -> viewModel.getCustomFieldNamesForTag(tagId) },
+        onUpdateTagOrder = { tags -> viewModel.updateTagOrder(tags) },
+        confirmDiscardChanges = settings.confirmDiscardChanges,
+        weekDayPreviewIsTimetable = settings.weekDayPreviewIsTimetable,
+        onToggleWeekDayPreviewMode = { viewModel.toggleWeekDayPreviewMode() },
     )
 }

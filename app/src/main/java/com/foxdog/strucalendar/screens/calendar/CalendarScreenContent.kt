@@ -1,5 +1,6 @@
 package com.foxdog.strucalendar.screens.calendar
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,11 +13,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.foxdog.strucalendar.components.MonthYearPickerDialog
+import com.foxdog.strucalendar.components.TagCreateDialog
+import com.foxdog.strucalendar.components.TagIconId
+import com.foxdog.strucalendar.components.TagIconSource
 import com.foxdog.strucalendar.data.entity.Tag
 import com.foxdog.strucalendar.data.entity.Task
 import com.foxdog.strucalendar.data.relation.TaskWithTags
@@ -27,6 +35,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -70,17 +79,38 @@ fun CalendarScreenContent(
     onNavigateToTaskCreate: (LocalDate) -> Unit,
     onNavigateToTaskList: () -> Unit,
     onNavigateToDateDetail: (LocalDate) -> Unit,
-    onNavigateToTaskDetail: (Long) -> Unit, // ★ ここに追加！
+    onNavigateToTaskDetail: (Long) -> Unit,
     onNavigateToSettings: () -> Unit,
-    showOnboarding: Boolean = false,           // ★ 追加
-    onOnboardingFinished: () -> Unit = {}
+    showOnboarding: Boolean = false,
+    onOnboardingFinished: () -> Unit = {},
+    showAllTutorialsCompletedDialog: Boolean = false,
+    onDismissAllTutorialsCompletedDialog: () -> Unit = {},
+    allTags: List<Tag> = emptyList(),
+    selectedFilterTagIds: Set<Long> = emptySet(),
+    onToggleFilterTag: (Long) -> Unit = {},
+    onResetTagFilter: () -> Unit = {},
+    filterIsAndSearch: Boolean = false,
+    onSetFilterIsAndSearch: (Boolean) -> Unit = {},
+    onDeleteTag: (Tag) -> Unit = {},
+    onCreateTag: (Tag, List<String>) -> Unit = { _, _ -> },
+    onUpdateTag: (Tag, List<String>) -> Unit = { _, _ -> },
+    onLoadCustomFieldsForTag: suspend (Long) -> List<String> = { emptyList() },
+    onUpdateTagOrder: (List<Tag>) -> Unit = {},
+    confirmDiscardChanges: Boolean = true,
+    weekDayPreviewIsTimetable: Boolean = false,
+    onToggleWeekDayPreviewMode: () -> Unit = {},
 ) {
     var showMonthYearDialog by remember { mutableStateOf(false) }
-    // ★ 追加：週表示モードで年月確定後に開く「週選択」ダイアログの状態
+    var showTagFilterDialog by remember { mutableStateOf(false) }
+    var isTagFolderExpanded by remember { mutableStateOf(false) }
+    var showTagCreateDialog by remember { mutableStateOf(false) }
+    var tagToEdit by remember { mutableStateOf<Tag?>(null) }
+    var tagToDelete by remember { mutableStateOf<Tag?>(null) }
+    // 週表示モードで年月確定後に開く「週選択」ダイアログの状態
     var weekSelectionMonth by remember { mutableStateOf<YearMonth?>(null) }
 
     val targetRects = remember { mutableStateMapOf<String, Rect>() }
-    var onboardingDismissed by remember { mutableStateOf(false) } // ★ ステップindexの管理は不要になった
+    var onboardingDismissed by remember { mutableStateOf(false) } // ステップindexの管理は不要になった
 
     val onboardingSteps = remember {
         listOf(
@@ -103,8 +133,8 @@ fun CalendarScreenContent(
             ),
             SpotlightStep(
                 targetKey = "prev_next_buttons",
-                title = "前後の月へ移動",
-                description = "◀▶ボタンのほか、画面を左右にスワイプしても月・週を移動できます。"
+                title = "カレンダーを移動・絞り込む",
+                description = "右上のタグボタンから、表示する予定をタグで絞り込めます。◀▶ボタンのほか、画面を左右にスワイプして月・週を移動することもできます。"
             )
         )
     }
@@ -158,18 +188,19 @@ fun CalendarScreenContent(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
+                                .weight(1f, fill = false)
                                 .clickable { showMonthYearDialog = true }
                                 .padding(vertical = 4.dp)
                                 .onGloballyPositioned {
                                     targetRects["year_month_label"] = it.boundsInRoot()
-                                } // ★ 追加
+                                }
                         ) {
                             val titleText = when (displayMode) {
                                 CalendarDisplayMode.YEAR -> "${currentMonth.year}年"
                                 CalendarDisplayMode.MONTH -> "${currentMonth.year}年 ${currentMonth.monthValue}月"
                                 CalendarDisplayMode.WEEK -> {
                                     val weekEnd = currentWeekStart.plusDays(6)
-                                    "${currentWeekStart.year}年 ${currentWeekStart.monthValue}月${currentWeekStart.dayOfMonth}日 〜 ${weekEnd.monthValue}月${weekEnd.dayOfMonth}日"
+                                    "${currentWeekStart.year}年 ${currentWeekStart.monthValue}/${currentWeekStart.dayOfMonth} 〜 ${weekEnd.monthValue}/${weekEnd.dayOfMonth}"
                                 }
                             }
 
@@ -177,7 +208,9 @@ fun CalendarScreenContent(
                                 text = titleText,
                                 fontSize = if (displayMode == CalendarDisplayMode.WEEK) 15.sp else 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = colorScheme.onSurface
+                                color = colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(2.dp))
                             Icon(
@@ -192,20 +225,52 @@ fun CalendarScreenContent(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.onGloballyPositioned {
                                 targetRects["prev_next_buttons"] = it.boundsInRoot()
-                            } // ★ 追加
+                            }
                         ) {
-                            IconButton(onClick = onPreviousPeriod) {
+                            IconButton(onClick = { showTagFilterDialog = true }, modifier = Modifier.size(40.dp)) {
+                                BadgedBox(
+                                    badge = {
+                                        if (selectedFilterTagIds.isNotEmpty()) {
+                                            Badge {
+                                                Text(selectedFilterTagIds.size.toString())
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.Default.Label,
+                                        contentDescription = "タグで絞り込む",
+                                        tint = if (selectedFilterTagIds.isNotEmpty()) colorScheme.primary else colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            if (displayMode == CalendarDisplayMode.WEEK) {
+                                IconButton(onClick = onToggleWeekDayPreviewMode, modifier = Modifier.size(40.dp)) {
+                                    Icon(
+                                        imageVector = if (weekDayPreviewIsTimetable) Icons.Default.ViewList else Icons.Default.Schedule,
+                                        contentDescription = if (weekDayPreviewIsTimetable) "リスト表示に切り替え" else "時刻表表示に切り替え",
+                                        tint = if (weekDayPreviewIsTimetable) colorScheme.primary else colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            IconButton(onClick = onPreviousPeriod, modifier = Modifier.size(40.dp)) {
                                 Icon(
                                     Icons.Default.ChevronLeft,
                                     contentDescription = "前へ",
-                                    tint = colorScheme.onSurfaceVariant
+                                    tint = colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
-                            IconButton(onClick = onNextPeriod) {
+                            IconButton(onClick = onNextPeriod, modifier = Modifier.size(40.dp)) {
                                 Icon(
                                     Icons.Default.ChevronRight,
                                     contentDescription = "次へ",
-                                    tint = colorScheme.onSurfaceVariant
+                                    tint = colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
@@ -257,7 +322,7 @@ fun CalendarScreenContent(
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             modifier = Modifier
                                 .height(42.dp)
-                                .onGloballyPositioned { coordinates -> // ★③ ボタン本体(楕円全体)の座標を記録
+                                .onGloballyPositioned { coordinates -> // ③ ボタン本体(楕円全体)の座標を記録
                                     targetRects["add_button"] = coordinates.boundsInRoot()
                                 }
                         ) {
@@ -295,7 +360,8 @@ fun CalendarScreenContent(
             if (displayMode != CalendarDisplayMode.YEAR) {
                 WeekdayHeaderRow(
                     weekStartDay = weekStartDay,
-                    showWeekNumberColumn = showWeekNumber && displayMode == CalendarDisplayMode.MONTH
+                    showWeekNumberColumn = showWeekNumber && displayMode == CalendarDisplayMode.MONTH,
+                    leadingWidth = if (displayMode == CalendarDisplayMode.WEEK && weekDayPreviewIsTimetable) 40.dp else 0.dp
                 )
             }
 
@@ -312,6 +378,7 @@ fun CalendarScreenContent(
                     buildCalendarMatrix = buildCalendarMatrix,
                     onDateSelected = onDateSelected,
                     onNavigateToDateDetail = onNavigateToDateDetail,
+                    onNavigateToTaskDetail = onNavigateToTaskDetail,
                     onUpdateYearMonth = onUpdateYearMonth
                 )
 
@@ -328,6 +395,8 @@ fun CalendarScreenContent(
                     onUpdateWeekStart = onUpdateWeekStart,
                     onNavigateToTaskDetail = onNavigateToTaskDetail,
                     onToggleTaskCompletion = onToggleTaskCompletion,
+                    isTimetableMode = weekDayPreviewIsTimetable,
+                    onTogglePreviewMode = onToggleWeekDayPreviewMode,
                 )
 
                 CalendarDisplayMode.YEAR -> YearGridView(
@@ -355,7 +424,7 @@ fun CalendarScreenContent(
                 onConfirm = { year, month ->
                     if (month in 1..12) {
                         when (displayMode) {
-                            // ★ 変更：週表示のときは即座に週を確定せず、その月の週一覧を選ばせる2段階目を開く
+                            // 週表示のときは即座に週を確定せず、その月の週一覧を選ばせる2段階目を開く
                             CalendarDisplayMode.WEEK -> {
                                 weekSelectionMonth = YearMonth.of(year, month)
                             }
@@ -368,7 +437,223 @@ fun CalendarScreenContent(
             )
         }
 
-        // ★ 追加：週表示専用「週選択」ダイアログ
+        if (showTagFilterDialog) {
+            AlertDialog(
+                onDismissRequest = { showTagFilterDialog = false },
+                title = { Text("タグで絞り込む", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text(
+                            if (filterIsAndSearch) "選択したタグをすべて含む予定のみ表示します。"
+                            else "選択したタグのいずれかを含む予定のみ表示します。",
+                            fontSize = 12.sp,
+                            color = colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        if (allTags.isEmpty()) {
+                            Text("タグがまだありません", fontSize = 13.sp, color = colorScheme.onSurfaceVariant)
+                        } else {
+                            val textMeasurer = rememberTextMeasurer()
+                            val density = LocalDensity.current
+
+                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                val usableWidthPx = with(density) { maxWidth.toPx() }
+
+                                val displayTags = remember(
+                                    allTags,
+                                    selectedFilterTagIds.toList(),
+                                    isTagFolderExpanded,
+                                    usableWidthPx
+                                ) {
+                                    if (isTagFolderExpanded) {
+                                        allTags
+                                    } else {
+                                        val defaultVisibleIds = LinkedHashSet<Long>()
+                                        var usedWidthPx = 0f
+                                        val spacingPx = with(density) { 8.dp.toPx() }
+
+                                        allTags.forEach { tag ->
+                                            val textWidthPx = textMeasurer.measure(
+                                                text = tag.name,
+                                                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                            ).size.width.toFloat()
+                                            val fixedWidthPx = with(density) {
+                                                (16.dp + 20.dp +
+                                                        if (TagIconId.fromId(tag.icon) != null) 6.dp else 0.dp).toPx()
+                                            }
+                                            val chipWidthPx = fixedWidthPx + textWidthPx
+                                            val requiredWidthPx = chipWidthPx +
+                                                    if (defaultVisibleIds.isEmpty()) 0f else spacingPx
+
+                                            if (
+                                                defaultVisibleIds.isEmpty() ||
+                                                usedWidthPx + requiredWidthPx <= usableWidthPx
+                                            ) {
+                                                defaultVisibleIds.add(tag.tagId)
+                                                usedWidthPx += requiredWidthPx
+                                            }
+                                        }
+
+                                        selectedFilterTagIds.forEach { defaultVisibleIds.add(it) }
+                                        allTags.filter { it.tagId in defaultVisibleIds }
+                                    }
+                                }
+
+                                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    com.foxdog.strucalendar.components.DraggableTagList(
+                                        tags = displayTags,
+                                        allTags = allTags,
+                                        selectedTags = allTags.filter { it.tagId in selectedFilterTagIds },
+                                        onTagClick = { tag -> onToggleFilterTag(tag.tagId) },
+                                        onOrderChanged = onUpdateTagOrder,
+                                        onDeleteTagRequest = { tagToDelete = it },
+                                        onEditTagRequest = { tag ->
+                                            tagToEdit = tag
+                                            showTagCreateDialog = true
+                                        }
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .border(BorderStroke(1.dp, colorScheme.outline), RoundedCornerShape(8.dp))
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(colorScheme.surface)
+                                                .clickable {
+                                                    tagToEdit = null
+                                                    showTagCreateDialog = true
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = "新規タグ作成", tint = colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                        }
+
+                                        if (displayTags.size < allTags.size || isTagFolderExpanded) {
+                                            TextButton(
+                                                onClick = { isTagFolderExpanded = !isTagFolderExpanded },
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(text = if (isTagFolderExpanded) "閉じる ▲" else "さらに表示 ▼", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("絞り込み条件:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+
+                                        Row(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(colorScheme.surfaceVariant).padding(2.dp)) {
+                                            val activeColor = colorScheme.surface
+                                            val inactiveColor = Color.Transparent
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(if (!filterIsAndSearch) activeColor else inactiveColor)
+                                                    .clickable { onSetFilterIsAndSearch(false) }
+                                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("いずれか (OR)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, color = if (!filterIsAndSearch) colorScheme.onSurface else colorScheme.onSurfaceVariant)
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(if (filterIsAndSearch) activeColor else inactiveColor)
+                                                    .clickable { onSetFilterIsAndSearch(true) }
+                                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                Text("すべて含む (AND)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, color = if (filterIsAndSearch) colorScheme.onSurface else colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onResetTagFilter) { Text("リセット") }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showTagFilterDialog = false }) { Text("閉じる") }
+                }
+            )
+        }
+
+        if (tagToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { tagToDelete = null },
+                title = { Text("タグの削除", fontWeight = FontWeight.Bold) },
+                text = { Text("タグ「${tagToDelete?.name}」を削除しますか？\n(この操作は取り消せません)") },
+                dismissButton = { TextButton(onClick = { tagToDelete = null }) { Text("キャンセル") } },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            tagToDelete?.let { target ->
+                                if (target.tagId in selectedFilterTagIds) {
+                                    onToggleFilterTag(target.tagId)
+                                }
+                                onDeleteTag(target)
+                            }
+                            tagToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = colorScheme.error)
+                    ) {
+                        Text("削除する")
+                    }
+                }
+            )
+        }
+
+        if (showTagCreateDialog) {
+            var editCustomFields by remember(tagToEdit) { mutableStateOf<List<String>>(emptyList()) }
+            LaunchedEffect(tagToEdit) {
+                tagToEdit?.let { tag ->
+                    editCustomFields = onLoadCustomFieldsForTag(tag.tagId)
+                }
+            }
+
+            TagCreateDialog(
+                confirmDiscardChanges = confirmDiscardChanges,
+                existingTag = tagToEdit,
+                existingCustomFields = editCustomFields,
+                onDismissRequest = {
+                    showTagCreateDialog = false
+                    tagToEdit = null
+                },
+                onTagSave = { name, iconSource, color, customFieldNames ->
+                    val iconString = when (iconSource) {
+                        is TagIconSource.InitialText -> null
+                        is TagIconSource.Vector -> iconSource.iconId.id
+                    }
+
+                    val editing = tagToEdit
+                    if (editing != null) {
+                        onUpdateTag(
+                            editing.copy(name = name, color = color.toArgb(), icon = iconString),
+                            customFieldNames
+                        )
+                    } else {
+                        onCreateTag(
+                            Tag(tagId = 0L, name = name, color = color.toArgb(), icon = iconString),
+                            customFieldNames
+                        )
+                    }
+
+                    showTagCreateDialog = false
+                    tagToEdit = null
+                }
+            )
+        }
+
+        // 週表示専用「週選択」ダイアログ
         val monthForWeekSelection = weekSelectionMonth
         if (monthForWeekSelection != null) {
             WeekSelectionDialog(
@@ -387,7 +672,7 @@ fun CalendarScreenContent(
             )
         }
     }
-    // ★ オンボーディング
+    // オンボーディング
     if (showOnboarding && !onboardingDismissed) {
         SpotlightOnboardingOverlay(
             steps = onboardingSteps,
@@ -406,10 +691,20 @@ fun CalendarScreenContent(
             }
         )
     }
+    if (showAllTutorialsCompletedDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissAllTutorialsCompletedDialog,
+            title = { Text("すべてのチュートリアルが完了しました", fontWeight = FontWeight.Bold) },
+            text = { Text("チュートリアルを再度確認したい場合、設定画面から再度有効にすることができます。") },
+            confirmButton = {
+                TextButton(onClick = onDismissAllTutorialsCompletedDialog) { Text("OK") }
+            }
+        )
+    }
 }
 
 // ============================================================
-// ★ 追加：週表示モード用「その月に含まれる週」の選択ダイアログ
+// 週表示モード用「その月に含まれる週」の選択ダイアログ
 // ============================================================
 
 private fun startOfWeekForPicker(date: LocalDate, weekStartDay: java.time.DayOfWeek): LocalDate {
@@ -485,7 +780,7 @@ private fun WeekSelectionDialog(
     )
 }
 
-// --- ★ Compose Preview (開発・デザイン確認用プレビュー) ---
+// --- Compose Preview (開発・デザイン確認用プレビュー) ---
 
 @Preview(showBackground = true, name = "カレンダー画面（通常表示）")
 @Composable

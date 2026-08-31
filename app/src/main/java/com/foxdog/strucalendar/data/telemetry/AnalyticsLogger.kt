@@ -41,6 +41,8 @@ object AnalyticsLogger {
 
     fun logTagCreated() = log("tag_created")
 
+    fun logTagUpdated() = log("tag_updated")
+
     fun logTagDeleted() = log("tag_deleted")
 
     fun logTagOrderChanged() = log("tag_order_changed")

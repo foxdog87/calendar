@@ -6,8 +6,9 @@ import java.time.YearMonth
 
 enum class RecurrenceType {
     NONE,
-    INTERVAL_DAYS,          // X日ごと
-    MONTHLY_NTH_WEEKDAY     // 毎月 第N曜日（Nは1〜4、5=最終週）
+    INTERVAL_DAYS,
+    MONTHLY_NTH_WEEKDAY,
+    WEEKLY_ON_DAYS
 }
 
 /**
@@ -16,17 +17,18 @@ enum class RecurrenceType {
  */
 data class RecurrenceRule(
     val type: RecurrenceType,
-    val intervalDays: Int? = null,   // type = INTERVAL_DAYS のとき使用
-    val nth: Int? = null,            // type = MONTHLY_NTH_WEEKDAY のとき使用（1〜4、5=最終週）
-    val weekday: Int? = null,        // type = MONTHLY_NTH_WEEKDAY のとき使用（DayOfWeek.value）
-    val endDate: LocalDate           // 繰り返しの最終日（この日を含む）
+    val intervalDays: Int? = null,
+    val nth: Int? = null,
+    val weekday: Int? = null,
+    val weekdays: Set<Int> = emptySet(),
+    val endDate: LocalDate
 )
 
 object RecurrenceCalculator {
 
     private const val MAX_OCCURRENCES = 366
 
-    // ★ 追加：終了日未指定時のデフォルト（開始日の1年後）
+
     fun defaultEndDate(startDate: LocalDate): LocalDate = startDate.plusYears(1)
 
     fun generateOccurrences(startDate: LocalDate, rule: RecurrenceRule): List<LocalDate> {
@@ -34,7 +36,23 @@ object RecurrenceCalculator {
             RecurrenceType.NONE -> listOf(startDate)
             RecurrenceType.INTERVAL_DAYS -> generateIntervalDays(startDate, rule)
             RecurrenceType.MONTHLY_NTH_WEEKDAY -> generateMonthlyNthWeekday(startDate, rule)
+            RecurrenceType.WEEKLY_ON_DAYS -> generateWeeklyOnDays(startDate, rule)
         }
+    }
+
+    private fun generateWeeklyOnDays(startDate: LocalDate, rule: RecurrenceRule): List<LocalDate> {
+        val weekdays = rule.weekdays.mapNotNull { runCatching { DayOfWeek.of(it) }.getOrNull() }.toSet()
+        if (weekdays.isEmpty()) return listOf(startDate)
+
+        val result = mutableListOf<LocalDate>()
+        var current = startDate
+        while (!current.isAfter(rule.endDate) && result.size < MAX_OCCURRENCES) {
+            if (current.dayOfWeek in weekdays) {
+                result.add(current)
+            }
+            current = current.plusDays(1)
+        }
+        return result
     }
 
     private fun generateIntervalDays(startDate: LocalDate, rule: RecurrenceRule): List<LocalDate> {

@@ -2,6 +2,7 @@ package com.foxdog.strucalendar.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,7 +52,7 @@ fun TaskDetailScreen(
 
     val itemWithTags = viewModel.currentTaskWithTags
     val checklistItems = viewModel.checklistState
-    val settings by viewModel.settings.collectAsState() // ★ 追加
+    val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
 
     if (itemWithTags == null) {
@@ -116,7 +117,7 @@ fun TaskDetailContent(
     val isRecurring = task.recurrenceGroupId != null
 
     var showDeleteOptionsDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) } // ★ 追加
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     val mainTag = itemWithTags.tags.firstOrNull()
     val baseColor = if (mainTag != null) Color(mainTag.color) else (if (task.color == 0) colorScheme.primary else Color(task.color))
@@ -148,17 +149,17 @@ fun TaskDetailContent(
                         onClick = {
                             when {
                                 isRecurring -> showDeleteOptionsDialog = true
-                                confirmBeforeDelete -> showDeleteConfirmDialog = true // ★ 追加
+                                confirmBeforeDelete -> showDeleteConfirmDialog = true
                                 else -> onDeleteTask()
                             }
                         },
-                        modifier = Modifier.size(44.dp) // ★ 追加：タップ領域も拡大
+                        modifier = Modifier.size(44.dp) // タップ領域も拡大
                     ) {
                         Icon(
                             Icons.Default.DeleteOutline,
                             contentDescription = "削除",
                             tint = colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(26.dp) // ★ 追加：24dp→26dpに拡大
+                            modifier = Modifier.size(26.dp) // 24dp→26dpに拡大
                         )
                     }
                 },
@@ -262,7 +263,7 @@ fun TaskDetailContent(
                             textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                             color = if (isCompleted) colorScheme.onSurfaceVariant else colorScheme.onSurface
                         )
-                        if (isRecurring) { // ★ 追加：繰り返しタスクのアイコン表示
+                        if (isRecurring) { // 繰り返しタスクのアイコン表示
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(
                                 imageVector = Icons.Default.Repeat,
@@ -491,7 +492,7 @@ fun TaskDetailContent(
                     val hasUrl = !task.url.isNullOrEmpty()
                     ExtensionRowMock(
                         icon = Icons.Default.Link,
-                        label = "リンク・場所",
+                        label = "リンク",
                         content = if (hasUrl) "リンクを開く" else "なし",
                         isLink = hasUrl,
                         onRowClick = {
@@ -511,17 +512,20 @@ fun TaskDetailContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = hasLocation) {
-                                val query = Uri.encode(task.locationName)
-
-                                val intent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("geo:0,0?q=$query")
-                                )
-
-                                context.startActivity(intent)
+                                try {
+                                    val query = Uri.encode(task.locationName)
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("geo:0,0?q=$query")
+                                    )
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "地図アプリが見つかりませんでした", Toast.LENGTH_SHORT).show()
+                                }
                             },
                         verticalAlignment = Alignment.Top
                     ) {
+
 
                         Icon(
                             Icons.Default.LocationOn,
@@ -601,7 +605,7 @@ fun TaskDetailContent(
         }
     }
 
-    // ★ 追加：繰り返しタスクの削除方法選択ダイアログ
+    // 繰り返しタスクの削除方法選択ダイアログ
     if (showDeleteOptionsDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteOptionsDialog = false },
@@ -646,7 +650,7 @@ fun TaskDetailContent(
             }
         )
     }
-    // ★ 追加：非繰り返しタスク用の削除確認ダイアログ
+    // 非繰り返しタスク用の削除確認ダイアログ
     if (showDeleteConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
@@ -675,7 +679,7 @@ fun TaskDetailContent(
     }
 }
 
-// --- 画面内で使用する補助コンポーネント ---
+
 
 @Composable
 fun TimeDisplayRow(label: String, timeStr: String) {
@@ -741,18 +745,17 @@ fun ExtensionRowMock(
         )
 
         Spacer(modifier = Modifier.width(12.dp))
-
-        // ラベルの幅を固定して、縦に折り返されないようにする
         Text(
             text = label,
             fontSize = 14.sp,
             color = colorScheme.onSurface,
-            modifier = Modifier.width(72.dp)
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.width(84.dp)
         )
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // 残った幅をコンテンツに渡す
         Text(
             text = content,
             fontSize = 13.sp,
@@ -764,7 +767,7 @@ fun ExtensionRowMock(
     }
 }
 
-// ★ 追加：削除方法選択ダイアログ内の1行（タイトル＋説明＋アイコン）
+
 @Composable
 private fun DeleteOptionRow(
     title: String,

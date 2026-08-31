@@ -32,10 +32,11 @@ data class Template(
 
     val lastUsedAt: Long? = null,
 
-    // ▼ 追加：繰り返し関連（Taskと同じ意味）。テンプレート適用時にTaskInputStateへコピーする。
+    // 繰り返し関連（Taskと同じ意味）。テンプレート適用時にTaskInputStateへコピーする。
     val recurrenceType: String? = null,
     val recurrenceIntervalDays: Int? = null,
     val recurrenceNth: Int? = null,
     val recurrenceWeekday: Int? = null,
+    val recurrenceWeekdays: String? = null,
     val recurrenceEndDate: Long? = null
 )

@@ -22,17 +22,14 @@ class TemplateRepository(
     fun getRecentTemplates(limit: Int = 3): Flow<List<Template>> =
         templateDao.getRecentTemplates(limit)
 
-    // ▼ 追加: テンプレート本体の取得
     suspend fun getTemplateById(templateId: Long): Template? {
         return templateDao.getTemplateById(templateId)
     }
 
-    // ▼ 追加: テンプレートに紐づくチェックリストの取得
     suspend fun getChecklistItems(templateId: Long): List<TemplateChecklistItem> {
         return templateChecklistItemDao.getByTemplateId(templateId)
     }
 
-    // ▼ 追加: テンプレートに紐づくタグIDのリスト取得
     suspend fun getTagIdsForTemplate(templateId: Long): List<Long> {
         return templateTagDao.getTagIdsForTemplate(templateId)
     }
@@ -96,7 +93,7 @@ class TemplateRepository(
         tags: List<Tag>,
         checklistItems: List<ChecklistItem>
     ) {
-        // position / lastUsedAt は編集で変えたくないので、既存値を引き継ぐ
+
         val existing = templateDao.getTemplateById(template.templateId)
         val merged = template.copy(
             position = existing?.position ?: template.position,
@@ -120,7 +117,7 @@ class TemplateRepository(
                         id = 0L,
                         templateId = template.templateId,
                         text = item.text,
-                        isChecked = item.isChecked, // ★ 修正：チェック状態の保存を追加
+                        isChecked = item.isChecked, // チェック状態の保存を追加
                         position = index
                     )
                 }
@@ -129,7 +126,7 @@ class TemplateRepository(
     }
 }
 
-// ★ 修正：updateTemplateの中に迷い込んでいた拡張関数を外（クラスの外）に出しました
+// updateTemplateの中に迷い込んでいた拡張関数を外（クラスの外）に出しました
 fun Template.getReminderSetting(): ReminderSetting {
     return when (this.reminderType) {
         "NONE", null -> ReminderSetting.None

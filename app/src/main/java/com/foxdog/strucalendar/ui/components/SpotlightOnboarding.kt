@@ -10,8 +10,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,7 +71,7 @@ fun SpotlightOnboardingOverlay(
     onSkip: () -> Unit,
     onShowLater: () -> Unit,
     onFinish: () -> Unit,
-    onStepShown: (SpotlightStep) -> Unit = {} // ★ 追加：ステップ表示時に通知するコールバック
+    onStepShown: (SpotlightStep) -> Unit = {} // ステップ表示時に通知するコールバック
 ) {
     var phase by remember { mutableStateOf(OnboardingPhase.IDLE) }
     var stepIndex by remember { mutableStateOf(0) }
@@ -78,7 +81,7 @@ fun SpotlightOnboardingOverlay(
         phase = OnboardingPhase.INTRO
     }
 
-    // ★ 追加：STEPフェーズになったら、現在のステップを通知する
+    // STEPフェーズになったら、現在のステップを通知する
     LaunchedEffect(phase, stepIndex) {
         if (phase == OnboardingPhase.STEP) {
             steps.getOrNull(stepIndex)?.let { step ->
@@ -141,7 +144,7 @@ private fun IntroScrim(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.72f))
-            // ★ 追加：空のタップ判定を置くことで、背面の画面へのタップをブロックする
+            // 空のタップ判定を置くことで、背面の画面へのタップをブロックする
             .pointerInput(Unit) { detectTapGestures {} },
         contentAlignment = Alignment.Center
     ) {
@@ -201,7 +204,7 @@ private fun StepScrim(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(stepIndex) {
-                // ★ 修正：isLastStep の判定を detectTapGestures の「中」に移動する。
+                // isLastStep の判定を detectTapGestures の「中」に移動する。
                 // こうすることで、全ステップでタップを消費しつつ、最終ステップ以外は onAdvance() が呼ばれる。
                 detectTapGestures {
                     if (!isLastStep) {
@@ -263,12 +266,27 @@ private fun StepScrim(
         }
 
         if (!isLastStep) {
-            Text(
-                text = "任意の場所をタップで次へ",
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.55f),
-                modifier = Modifier.align(Alignment.Center)
-            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.96f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.TouchApp,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "任意の場所をタップで次へ",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
 
         // --- 説明カード ---

@@ -77,10 +77,46 @@ class TagRepository(
         return tagId
     }
 
+    suspend fun getCustomFieldNames(tagId: Long): List<String> {
+        return tagCustomFieldDao.getByTagId(tagId).map { it.fieldName }
+    }
+
     suspend fun updateTag(
         tag: Tag
     ) {
         tagDao.updateTag(tag)
+    }
+
+    /**
+     * タグ更新＋カスタム項目の同期（項目名で差分比較する）。
+     * 既存と同名の項目はfieldIdを維持し、紐づくTaskCustomFieldValue/
+     * TemplateCustomFieldValueを保持する。削除された項目名はCASCADEで
+     * 値ごと削除され、新規項目名は追加される。
+     */
+    suspend fun updateTagWithCustomFields(
+        tag: Tag,
+        customFieldNames: List<String>
+    ) {
+        tagDao.updateTag(tag)
+
+        val existingFields = tagCustomFieldDao.getByTagId(tag.tagId)
+        val newNames = customFieldNames
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        val existingNames = existingFields.map { it.fieldName }
+
+        val toDelete = existingFields.filter { it.fieldName !in newNames }
+        val toAddNames = newNames.filter { it !in existingNames }
+
+        toDelete.forEach { tagCustomFieldDao.delete(it) }
+
+        if (toAddNames.isNotEmpty()) {
+            tagCustomFieldDao.insertAll(
+                toAddNames.map { fieldName ->
+                    TagCustomField(tagId = tag.tagId, fieldName = fieldName)
+                }
+            )
+        }
     }
 
     /**

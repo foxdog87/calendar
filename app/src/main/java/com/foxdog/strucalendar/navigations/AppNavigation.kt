@@ -90,6 +90,7 @@ fun AppNavigation(
     calendarViewModel: CalendarViewModel,
     settingsRepository: SettingsRepository,
     countryCode: String,
+    onNotificationPermissionNeeded: () -> Unit = {},
     initialTaskId: Long? = null
 ) {
     val navController = rememberNavController()
@@ -197,7 +198,7 @@ fun AppNavigation(
                         launchSingleTop = true
                     }
                 },
-                // ★ 追加：タスク詳細へのナビゲーションを追加
+                // タスク詳細へのナビゲーションを追加
                 onNavigateToTaskDetail = { taskId ->
                     navController.navigate(
                         TaskDetailRoute(taskId = taskId)
@@ -209,7 +210,7 @@ fun AppNavigation(
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
                     }
-                }
+                },
             )
         }
 
@@ -345,6 +346,7 @@ fun AppNavigation(
 
             TaskCreateScreen(
                 viewModel = taskCreateViewModel,
+                onNotificationPermissionNeeded = onNotificationPermissionNeeded,
                 onNavigateBack = {
                     if (navController.previousBackStackEntry != null) {
                         navController.popBackStack()
@@ -455,7 +457,8 @@ fun AppNavigation(
                                 tagRepository = tagRepository,
                                 templateCustomFieldValueDao =
                                     database.templateCustomFieldValueDao(),
-                                tagCustomFieldDao = tagCustomFieldDao
+                                tagCustomFieldDao = tagCustomFieldDao,
+                                settingsRepository = settingsRepository
                             ) as T
                         }
                     }

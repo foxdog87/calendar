@@ -68,7 +68,12 @@ class SettingViewModel(
         AnalyticsLogger.logSettingChanged("confirm_before_delete_task")
     }
 
-    // ★ 変更：予定一覧画面のオンボーディングも合わせてリセットする
+    fun setConfirmDiscardChanges(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setConfirmDiscardChanges(enabled) }
+        AnalyticsLogger.logSettingChanged("confirm_discard_changes")
+    }
+
+    // 予定一覧画面のオンボーディングも合わせてリセットする
     fun resetTutorialGuides() {
         viewModelScope.launch {
             settingsRepository.setCalendarOnboardingCompleted(false)

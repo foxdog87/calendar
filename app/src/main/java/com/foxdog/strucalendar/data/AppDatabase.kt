@@ -44,8 +44,8 @@ import com.foxdog.strucalendar.data.dao.TemplateDisplayOrderDao
         TaskCustomFieldValue::class,
         TemplateCustomFieldValue::class
     ],
-    version = 21,
-    exportSchema = false
+    version = 22,
+    exportSchema = true
 )
 @TypeConverters(ReminderTypeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -72,14 +72,14 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        private val MIGRATION_9_10 = object : Migration(9, 10) {
+        // version 21 → 22: 「毎週◯曜日（複数選択）」繰り返し機能のための列を追加。
+        // 21.json の tasks/templates テーブル定義（recurrenceWeekday INTEGER）に、
+        // 複数曜日をカンマ区切りで保持する recurrenceWeekdays TEXT を追加する。
+        // 既存の recurrenceWeekday（単一曜日、MONTHLY_NTH_WEEKDAY用）はそのまま維持。
+        val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS template_display_orders (templateId INTEGER NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(templateId))"
-                )
-                db.execSQL(
-                    "INSERT OR IGNORE INTO template_display_orders (templateId, position) SELECT templateId, templateId - 1 FROM templates"
-                )
+                db.execSQL("ALTER TABLE tasks ADD COLUMN recurrenceWeekdays TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE templates ADD COLUMN recurrenceWeekdays TEXT DEFAULT NULL")
             }
         }
 
@@ -95,8 +95,6 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "calendar_database"
                 )
-                    // ... (前略)
-
                     .addCallback(object : RoomDatabase.Callback() {
 
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -249,6 +247,7 @@ abstract class AppDatabase : RoomDatabase() {
                             }
                         }
                     })
+                    .addMigrations(MIGRATION_21_22)
                     .build()
 
                 INSTANCE = instance

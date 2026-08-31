@@ -99,6 +99,7 @@ fun DateDetailContent(
 
     val headerFormatter = remember { DateTimeFormatter.ofPattern("yyyy年MM月dd日 (E)", Locale.JAPANESE) }
     val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm", Locale.JAPANESE) }
+    val dateTimeFormatter = remember { DateTimeFormatter.ofPattern("M/d HH:mm", Locale.JAPANESE) }
     val now = LocalDateTime.now()
 
     Scaffold(
@@ -114,13 +115,13 @@ fun DateDetailContent(
             )
         },
         floatingActionButton = {
-            // ★ bounceClick適用：ExtendedFloatingActionButtonをBoxで置き換え
+            // bounceClick適用：ExtendedFloatingActionButtonをBoxで置き換え
             // 1. FAB（作成ボタン）の正しいコード
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
                     .background(colorScheme.primary)
-                    // ★ 波紋あり、角丸四角形（16.dp）で広く広がる
+                    // 波紋あり、角丸四角形（16.dp）で広く広がる
                     .bounceClick(showWave = true, isWaveCircle = false, waveCornerRadius = 16.dp) {
                         onNavigateToCreateTask(dateMillis)
                     }
@@ -201,7 +202,7 @@ fun DateDetailContent(
                     val startDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.startTime), ZoneId.systemDefault())
                     val endDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(task.endTime), ZoneId.systemDefault())
 
-                    val isExpired = !isCompleted && !task.isAllDay && endDateTime.isBefore(now)
+                    val isExpired = !isCompleted && !task.isAutoCompleted && !task.isAllDay && endDateTime.isBefore(now)
 
                     val firstTag = item.tags.firstOrNull()
                     val baseColor = if (firstTag != null) Color(firstTag.color) else (if (task.color == 0) colorScheme.primary else Color(task.color))
@@ -215,11 +216,25 @@ fun DateDetailContent(
                             if (task.isAllDay) {
                                 Text(text = "終日", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isCompleted) colorScheme.onSurfaceVariant else colorScheme.primary)
                             } else {
-                                Text(text = startDateTime.format(timeFormatter), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isCompleted) colorScheme.onSurfaceVariant else colorScheme.onSurface)
+                                val isMultiDay = startDateTime.toLocalDate() != endDateTime.toLocalDate()
+                                Text(
+                                    text = if (isMultiDay) startDateTime.format(dateTimeFormatter) else startDateTime.format(timeFormatter),
+                                    fontSize = if (isMultiDay) 11.sp else 13.sp,
+                                    fontWeight = if (isMultiDay) FontWeight.Normal else FontWeight.Bold,
+                                    color = if (isMultiDay) {
+                                        colorScheme.onSurfaceVariant
+                                    } else {
+                                        if (isCompleted) colorScheme.onSurfaceVariant else colorScheme.onSurface
+                                    }
+                                )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(if (isCompleted) calColors.success else if (isExpired) colorScheme.error else baseColor))
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text(text = endDateTime.format(timeFormatter), fontSize = 11.sp, color = colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = if (isMultiDay) endDateTime.format(dateTimeFormatter) else endDateTime.format(timeFormatter),
+                                    fontSize = 11.sp,
+                                    color = colorScheme.onSurfaceVariant
+                                )
                             }
                         }
 

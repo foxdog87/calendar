@@ -24,6 +24,12 @@ class TaskListViewModel(
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
+    init {
+        viewModelScope.launch {
+            taskRepository.autoCompleteExpiredTasks()
+        }
+    }
+
     val allTasksWithTags: StateFlow<List<TaskWithTags>> = taskRepository.allTasksWithTags
         .stateIn(
             scope = viewModelScope,
@@ -75,6 +81,24 @@ class TaskListViewModel(
         }
     }
 
+    fun updateTag(
+        tag: Tag,
+        customFieldNames: List<String>
+    ) {
+        viewModelScope.launch {
+            tagRepository.updateTagWithCustomFields(
+                tag = tag,
+                customFieldNames = customFieldNames
+            )
+
+            AnalyticsLogger.logTagUpdated()
+        }
+    }
+
+    suspend fun getCustomFieldNamesForTag(tagId: Long): List<String> {
+        return tagRepository.getCustomFieldNames(tagId)
+    }
+
     fun updateTagOrder(tags: List<Tag>) {
         viewModelScope.launch {
             tagRepository.updateTagOrder(tags)
@@ -92,7 +116,7 @@ class TaskListViewModel(
     var isBulkDeleting by mutableStateOf(false)
         private set
 
-    // ★ 変更：deleteAllStatuses: Boolean（Switch）から、
+    // deleteAllStatuses: Boolean（Switch）から、
     // includeCompleted / includeUncompleted の2つの独立したBoolean（Checkbox）に変更
     fun previewBulkDelete(cutoffEpoch: Long?, includeCompleted: Boolean, includeUncompleted: Boolean) {
         val states = buildTargetStates(includeCompleted, includeUncompleted)
@@ -134,7 +158,7 @@ class TaskListViewModel(
         }
     }
 
-    // ★ 変更：未完了・完了それぞれの独立したチェック状態から対象ステータスのリストを組み立てる
+    // 未完了・完了それぞれの独立したチェック状態から対象ステータスのリストを組み立てる
     private fun buildTargetStates(includeCompleted: Boolean, includeUncompleted: Boolean): List<String> {
         val states = mutableListOf<String>()
         if (includeCompleted) states.add("COMPLETED")
@@ -166,10 +190,19 @@ class TaskListViewModel(
     // オンボーディング
     // ============================================================
 
-    // ★ 追加
+    var showAllTutorialsCompletedDialog by mutableStateOf(false)
+        private set
+
+    fun dismissAllTutorialsCompletedDialog() {
+        showAllTutorialsCompletedDialog = false
+    }
+
     fun setTaskListOnboardingCompleted(completed: Boolean) {
         viewModelScope.launch {
             settingsRepository.setTaskListOnboardingCompleted(completed)
+            if (completed && settingsRepository.areAllOnboardingsCompleted()) {
+                showAllTutorialsCompletedDialog = true
+            }
         }
     }
 }

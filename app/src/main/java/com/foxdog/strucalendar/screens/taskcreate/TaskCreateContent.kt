@@ -34,16 +34,21 @@ import com.foxdog.strucalendar.state.TaskInputState
 import com.foxdog.strucalendar.ui.theme.calendarColors
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.runtime.mutableStateMapOf
 import com.foxdog.strucalendar.components.SpotlightOnboardingOverlay
 import com.foxdog.strucalendar.components.SpotlightShape
 import com.foxdog.strucalendar.components.SpotlightStep
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.geometry.Rect
+import com.foxdog.strucalendar.components.SimpleDatePickerDialog
+import com.foxdog.strucalendar.components.SimpleTimePickerDialog
+import com.foxdog.strucalendar.data.recurrence.RecurrenceType
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -53,13 +58,18 @@ fun TaskCreateContent(
     templates: List<Template>,
     recentTemplates: List<Template>,
     isTitleError: Boolean = false,
+    isEditMode: Boolean = false,
     isDateTimeError: Boolean = false,
+    isSaving: Boolean = false,
+    onNotificationPermissionNeeded: () -> Unit = {},
     onNavigateBack: () -> Unit,
     onSaveTask: () -> Unit,
     onUpdateInput: ((TaskInputState) -> TaskInputState) -> Unit,
     onToggleTagSelection: (Tag) -> Unit,
     onDeleteTag: (Tag) -> Unit,
     onCreateTag: (Tag, List<String>) -> Unit,
+    onUpdateTag: (Tag, List<String>) -> Unit,
+    onLoadCustomFieldsForTag: suspend (Long) -> List<String>,
     onApplyTemplate: (Template) -> Unit,
     onUpdateTagOrder: (List<Tag>) -> Unit,
     onUpdateTemplateOrder: (List<Template>) -> Unit,
@@ -74,13 +84,29 @@ fun TaskCreateContent(
     onDeleteTemplate: (Template) -> Unit,
     onNavigateToTemplateEdit: (Long) -> Unit,
     showOnboarding: Boolean = false,
-    onOnboardingFinished: () -> Unit = {}
+    onOnboardingFinished: () -> Unit = {},
+    showAllTutorialsCompletedDialog: Boolean = false,
+    onDismissAllTutorialsCompletedDialog: () -> Unit = {},
+    hasUnsavedChanges: Boolean = false,
+    confirmDiscardChanges: Boolean = true,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val calColors = MaterialTheme.calendarColors
 
     val scrollState = rememberScrollState()
-    val coroutineScope = rememberCoroutineScope() // ★ 追加
+    val coroutineScope = rememberCoroutineScope()
+
+    var showDiscardConfirmDialog by remember { mutableStateOf(false) }
+
+    val attemptClose: () -> Unit = {
+        if (confirmDiscardChanges && hasUnsavedChanges) {
+            showDiscardConfirmDialog = true
+        } else {
+            onNavigateBack()
+        }
+    }
+
+    BackHandler { attemptClose() }
 
     val fieldBackgroundColor = colorScheme.surfaceVariant
     val templateIconColor = calColors.templateAccent
@@ -90,11 +116,14 @@ fun TaskCreateContent(
         mutableStateOf(alwaysShowDetailedSettings)
     }
 
+    val recurrenceBringIntoViewRequester = remember { BringIntoViewRequester() }
+
     var activeTarget by remember { mutableStateOf<String?>(null) }
     var showTemplateDialog by remember { mutableStateOf(false) }
     var selectedTemplateName by remember { mutableStateOf("テンプレートを選択") }
 
     var showTagCreateDialog by remember { mutableStateOf(false) }
+    var tagToEdit by remember { mutableStateOf<Tag?>(null) }
     var isTagFolderExpanded by remember { mutableStateOf(false) }
     var tagToDelete by remember { mutableStateOf<Tag?>(null) }
 
@@ -106,7 +135,7 @@ fun TaskCreateContent(
     val targetRects = remember { mutableStateMapOf<String, Rect>() }
     var onboardingDismissed by remember { mutableStateOf(false) }
 
-    // ★ 追加：スクロール用の Requester をステップごとに用意
+    // スクロール用の Requester をステップごとに用意
     val templateRequester = remember { BringIntoViewRequester() }
     val tagRequester = remember { BringIntoViewRequester() }
     val detailsRequester = remember { BringIntoViewRequester() }
@@ -141,14 +170,14 @@ fun TaskCreateContent(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "予定を作成",
+                        if (isEditMode) "予定を編集" else "予定を作成",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = attemptClose) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "閉じる",
@@ -160,10 +189,14 @@ fun TaskCreateContent(
                 actions = {
                     IconButton(
                         onClick = onSaveTask,
+                        enabled = !isSaving,
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .size(36.dp)
-                            .background(colorScheme.primary, CircleShape)
+                            .background(
+                                if (isSaving) colorScheme.onSurfaceVariant else colorScheme.primary,
+                                CircleShape
+                            )
                     ) {
                         Icon(
                             Icons.Default.Check,
@@ -183,13 +216,14 @@ fun TaskCreateContent(
                 .padding(innerPadding)
                 .fillMaxSize()
                 .verticalScroll(scrollState)
+                .imePadding()
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
             SectionLabel("テンプレートを選択")
 
-            // ★ 修正：bringIntoViewRequester を追加
+            // bringIntoViewRequester を追加
             Box(
                 modifier = Modifier
                     .bringIntoViewRequester(templateRequester)
@@ -225,7 +259,8 @@ fun TaskCreateContent(
                 endTime = taskState.endTime,
                 isAllDay = taskState.isAllDay,
                 isDateTimeError = isDateTimeError,
-                onTimeBoxClick = { target -> activeTarget = target }
+                onTimeBoxClick = { target -> activeTarget = target },
+                onTimeOnlyBoxClick = { target -> activeTarget = target }
             )
 
             AllDayToggleRow(
@@ -235,7 +270,7 @@ fun TaskCreateContent(
                 }
             )
 
-            // ★ 修正：bringIntoViewRequester を追加
+            // bringIntoViewRequester を追加
             Column(
                 modifier = Modifier
                     .bringIntoViewRequester(tagRequester)
@@ -251,7 +286,14 @@ fun TaskCreateContent(
                     onToggleTagSelection = onToggleTagSelection,
                     onUpdateTagOrder = onUpdateTagOrder,
                     onDeleteTagRequest = { tag -> tagToDelete = tag },
-                    onAddTagClick = { showTagCreateDialog = true }
+                    onEditTagRequest = { tag ->
+                        tagToEdit = tag
+                        showTagCreateDialog = true
+                    },
+                    onAddTagClick = {
+                        tagToEdit = null
+                        showTagCreateDialog = true
+                    }
                 )
             }
 
@@ -269,14 +311,13 @@ fun TaskCreateContent(
                 }
             )
 
-            // （※以前の質問で追加されたカスタム項目セクションをここに配置）
-            /* CustomFieldsSection(
+            CustomFieldsSection(
                 fields = taskState.customFields,
                 values = taskState.customFieldValues,
                 onValueChange = onCustomFieldValueChange
-            ) */
+            )
 
-            // ★ 修正：bringIntoViewRequester を追加
+
             Box(
                 modifier = Modifier
                     .bringIntoViewRequester(detailsRequester)
@@ -286,7 +327,19 @@ fun TaskCreateContent(
             ) {
                 ExpandableDetailsSection(
                     isExpanded = isDetailsExpanded && !showOnboarding,
-                    onToggle = { if (!showOnboarding) isDetailsExpanded = !isDetailsExpanded }
+                    onToggle = {
+                        if (!showOnboarding) {
+                            val expanding = !isDetailsExpanded
+                            isDetailsExpanded = expanding
+                            if (expanding) {
+                                coroutineScope.launch {
+                                    // 展開後に詳細設定全体が見える位置まで移動する。
+                                    delay(300)
+                                    detailsRequester.bringIntoView()
+                                }
+                            }
+                        }
+                    }
                 ) {
                     ChecklistSection(
                         checkList = taskState.checkList,
@@ -300,7 +353,8 @@ fun TaskCreateContent(
                         isAllDay = taskState.isAllDay,
                         onReminderSettingChange = { newSetting ->
                             onUpdateInput { current -> current.copy(reminderSetting = newSetting) }
-                        }
+                        },
+                        onNotificationPermissionNeeded = onNotificationPermissionNeeded
                     )
 
                     LocationSection(
@@ -321,27 +375,49 @@ fun TaskCreateContent(
                         onInfoClick = { showInfoDialog = true }
                     )
 
-                    RecurrenceSection(
-                        recurrenceType = taskState.recurrenceType,
-                        intervalDays = taskState.recurrenceIntervalDays,
-                        nth = taskState.recurrenceNth,
-                        weekday = taskState.recurrenceWeekday,
-                        endDateMillis = taskState.recurrenceEndTime,
-                        baseDateMillis = taskState.startTime,
-                        onTypeChange = { type ->
-                            onUpdateInput { current -> current.copy(recurrenceType = type) }
-                        },
-                        onIntervalDaysChange = { days ->
-                            onUpdateInput { current -> current.copy(recurrenceIntervalDays = days) }
-                        },
-                        onNthChange = { nth ->
-                            onUpdateInput { current -> current.copy(recurrenceNth = nth) }
-                        },
-                        onWeekdayChange = { weekday ->
-                            onUpdateInput { current -> current.copy(recurrenceWeekday = weekday) }
-                        },
-                        onEndDateClick = { activeTarget = "RECURRENCE_END" }
-                    )
+                    Column(
+                        modifier = Modifier
+                            .bringIntoViewRequester(recurrenceBringIntoViewRequester)
+                    ) {
+                        RecurrenceSection(
+                            recurrenceType = taskState.recurrenceType,
+                            intervalDays = taskState.recurrenceIntervalDays,
+                            nth = taskState.recurrenceNth,
+                            weekday = taskState.recurrenceWeekday,
+                            weekdays = taskState.recurrenceWeekdays,
+                            endDateMillis = taskState.recurrenceEndTime,
+                            baseDateMillis = taskState.startTime,
+                            onTypeChange = { type ->
+                                onUpdateInput { current -> current.copy(recurrenceType = type) }
+                                if (type != RecurrenceType.NONE) {
+                                    coroutineScope.launch {
+                                        delay(300)
+                                        recurrenceBringIntoViewRequester.bringIntoView()
+                                    }
+                                }
+                            },
+                            onIntervalDaysChange = { days ->
+                                onUpdateInput { current -> current.copy(recurrenceIntervalDays = days) }
+                            },
+                            onNthChange = { nth ->
+                                onUpdateInput { current -> current.copy(recurrenceNth = nth) }
+                            },
+                            onWeekdayChange = { weekday ->
+                                onUpdateInput { current -> current.copy(recurrenceWeekday = weekday) }
+                            },
+                            onWeekdaysToggle = { day ->
+                                onUpdateInput { current ->
+                                    val newSet = if (day in current.recurrenceWeekdays) {
+                                        current.recurrenceWeekdays - day
+                                    } else {
+                                        current.recurrenceWeekdays + day
+                                    }
+                                    current.copy(recurrenceWeekdays = newSet)
+                                }
+                            },
+                            onEndDateClick = { activeTarget = "RECURRENCE_END" }
+                        )
+                    }
                 }
             }
         }
@@ -397,27 +473,73 @@ fun TaskCreateContent(
         )
     }
 
+    if (templateToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { templateToDelete = null },
+            title = { Text("テンプレートの削除", fontWeight = FontWeight.Bold) },
+            text = { Text("テンプレート「${templateToDelete?.title}」を削除しますか？\n(この操作は取り消せません)") },
+            dismissButton = {
+                TextButton(onClick = { templateToDelete = null }) { Text("キャンセル") }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        templateToDelete?.let { target -> onDeleteTemplate(target) }
+                        templateToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colorScheme.error)
+                ) { Text("削除する") }
+            }
+        )
+    }
+
     if (showTagCreateDialog) {
+        var editCustomFields by remember(tagToEdit) { mutableStateOf<List<String>>(emptyList()) }
+        LaunchedEffect(tagToEdit) {
+            tagToEdit?.let { tag ->
+                editCustomFields = onLoadCustomFieldsForTag(tag.tagId)
+            }
+        }
+
         TagCreateDialog(
-            onDismissRequest = { showTagCreateDialog = false },
+            confirmDiscardChanges = confirmDiscardChanges,
+            existingTag = tagToEdit,
+            existingCustomFields = editCustomFields,
+            onDismissRequest = {
+                showTagCreateDialog = false
+                tagToEdit = null
+            },
             onTagSave = { name, iconSource, color, customFields ->
                 val iconString = when (iconSource) {
                     is TagIconSource.InitialText -> null
                     is TagIconSource.Vector -> iconSource.iconId.id
                 }
 
-                val newTag = Tag(
-                    tagId = 0L,
-                    name = name,
-                    color = color.toArgb(),
-                    icon = iconString
-                )
+                val editing = tagToEdit
+                if (editing != null) {
+                    onUpdateTag(
+                        editing.copy(
+                            name = name,
+                            color = color.toArgb(),
+                            icon = iconString
+                        ),
+                        customFields
+                    )
+                } else {
+                    val newTag = Tag(
+                        tagId = 0L,
+                        name = name,
+                        color = color.toArgb(),
+                        icon = iconString
+                    )
 
-                onCreateTag(
-                    newTag,
-                    customFields
-                )
+                    onCreateTag(
+                        newTag,
+                        customFields
+                    )
+                }
                 showTagCreateDialog = false
+                tagToEdit = null
             }
         )
     }
@@ -504,35 +626,75 @@ fun TaskCreateContent(
         )
     }
 
-    if (activeTarget != null) {
+    if (activeTarget == "RECURRENCE_END") {
         DateTimePickerWizard(
             target = activeTarget!!,
-            isAllDay = if (activeTarget == "RECURRENCE_END") true else taskState.isAllDay,
+            isAllDay = true,
             onDismiss = { activeTarget = null },
             onDateTimeSelected = { finalDateTimeLong ->
+                onUpdateInput { current -> current.copy(recurrenceEndTime = finalDateTimeLong) }
+                activeTarget = null
+            }
+        )
+    } else if (activeTarget == "START_DATE" || activeTarget == "END_DATE") {
+        val isStart = activeTarget == "START_DATE"
+        val baseMillis = if (isStart) taskState.startTime else taskState.endTime
+        val baseDate = Instant.ofEpochSecond(baseMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+        SimpleDatePickerDialog(
+            initialDateMillis = baseDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            title = if (isStart) "開始日を設定" else "終了日を設定",
+            onDismiss = { activeTarget = null },
+            onDateSelected = { newDate ->
                 onUpdateInput { current ->
-                    when (activeTarget) {
-                        "START" -> {
-                            val newStartDate = Instant.ofEpochSecond(finalDateTimeLong)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDate()
-
-                            val endTimeOfDay = Instant.ofEpochSecond(current.endTime)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalTime()
-
-                            val newEnd = LocalDateTime.of(newStartDate, endTimeOfDay)
-                                .atZone(ZoneId.systemDefault())
-                                .toEpochSecond()
-
-                            current.copy(startTime = finalDateTimeLong, endTime = newEnd)
-                        }
-                        "RECURRENCE_END" -> current.copy(recurrenceEndTime = finalDateTimeLong)
-                        else -> current.copy(endTime = finalDateTimeLong)
-                    }
+                    val baseTime = if (isStart) current.startTime else current.endTime
+                    val timeOfDay = Instant.ofEpochSecond(baseTime).atZone(ZoneId.systemDefault()).toLocalTime()
+                    val newEpoch = LocalDateTime.of(newDate, timeOfDay)
+                        .atZone(ZoneId.systemDefault())
+                        .toEpochSecond()
+                    if (isStart) current.copy(startTime = newEpoch) else current.copy(endTime = newEpoch)
                 }
                 activeTarget = null
             }
+        )
+    } else if (activeTarget == "START_TIME" || activeTarget == "END_TIME") {
+        val isStart = activeTarget == "START_TIME"
+        val baseMillis = if (isStart) taskState.startTime else taskState.endTime
+        val baseLocalTime = Instant.ofEpochSecond(baseMillis).atZone(ZoneId.systemDefault()).toLocalTime()
+        SimpleTimePickerDialog(
+            initialHour = baseLocalTime.hour,
+            initialMinute = baseLocalTime.minute,
+            title = if (isStart) "開始時刻を設定" else "終了時刻を設定",
+            onDismiss = { activeTarget = null },
+            onTimeSelected = { hour, minute ->
+                onUpdateInput { current ->
+                    val baseTime = if (isStart) current.startTime else current.endTime
+                    val date = Instant.ofEpochSecond(baseTime).atZone(ZoneId.systemDefault()).toLocalDate()
+                    val newEpoch = LocalDateTime.of(date, LocalTime.of(hour, minute))
+                        .atZone(ZoneId.systemDefault())
+                        .toEpochSecond()
+                    if (isStart) current.copy(startTime = newEpoch) else current.copy(endTime = newEpoch)
+                }
+                activeTarget = null
+            }
+        )
+    }
+
+
+    if (showLocationSearchDialog) {
+        LocationSearchDialog(
+            searchResults = osmSearchResults,
+            isSearching = isOsmSearching,
+            onSearch = onSearchOsmPoi,
+            onSelect = { poi ->
+                onSelectOsmPoi(poi)
+                showLocationSearchDialog = false
+            },
+            onDismiss = { showLocationSearchDialog = false },
+            onSaveTextLocation = { name ->
+                onUpdateInput { current ->
+                    current.copy(locationName = name, locationAddress = null)
+                }
+            },
         )
     }
 
@@ -553,12 +715,42 @@ fun TaskCreateContent(
                 onboardingDismissed = true
                 onOnboardingFinished()
             },
-            // ★ 追加：ステップが切り替わったときのスクロール処理
+            // ステップが切り替わったときのスクロール処理
             onStepShown = { step ->
                 coroutineScope.launch {
                     delay(100) // 描画完了を待つためのごく短い待機
                     requesters[step.targetKey]?.bringIntoView()
                 }
+            }
+        )
+    }
+    if (showAllTutorialsCompletedDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissAllTutorialsCompletedDialog,
+            title = { Text("すべてのチュートリアルが完了しました", fontWeight = FontWeight.Bold) },
+            text = { Text("チュートリアルを再度確認したい場合、設定画面から再度有効にすることができます。") },
+            confirmButton = {
+                TextButton(onClick = onDismissAllTutorialsCompletedDialog) { Text("OK") }
+            }
+        )
+    }
+
+    if (showDiscardConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmDialog = false },
+            title = { Text("編集内容を破棄しますか？", fontWeight = FontWeight.Bold) },
+            text = { Text("このまま閉じると、入力した内容は保存されません。") },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmDialog = false }) { Text("キャンセル") }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDiscardConfirmDialog = false
+                        onNavigateBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colorScheme.error)
+                ) { Text("閉じる") }
             }
         )
     }

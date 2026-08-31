@@ -1,8 +1,11 @@
 package com.foxdog.strucalendar.screens.templatecreate
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -35,6 +38,9 @@ import com.foxdog.strucalendar.screens.taskcreate.TagSection
 import com.foxdog.strucalendar.screens.taskcreate.TitleSection
 import com.foxdog.strucalendar.screens.taskcreate.WireframeTextField
 import com.foxdog.strucalendar.state.TemplateInputState
+import com.foxdog.strucalendar.data.recurrence.RecurrenceType
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +48,7 @@ fun TemplateCreateContent(
     templateState: TemplateInputState,
     availableTags: List<Tag>,
     isTitleError: Boolean = false,
+    isEditMode: Boolean = false,
     isSaving: Boolean,
     onSaveTemplate: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -49,7 +56,11 @@ fun TemplateCreateContent(
     onToggleTagSelection: (Tag) -> Unit,
     onDeleteTag: (Tag) -> Unit,
     onCreateTag: (Tag, List<String>) -> Unit,
+    onUpdateTag: (Tag, List<String>) -> Unit,
+    onLoadCustomFieldsForTag: suspend (Long) -> List<String>,
     onUpdateTagOrder: (List<Tag>) -> Unit,
+    hasUnsavedChanges: Boolean = false,
+    confirmDiscardChanges: Boolean = true,
 ) {
     val colorScheme = MaterialTheme.colorScheme
 
@@ -57,22 +68,38 @@ fun TemplateCreateContent(
     var showTagCreateDialog by remember { mutableStateOf(false) }
     var isTagFolderExpanded by remember { mutableStateOf(false) }
     var tagToDelete by remember { mutableStateOf<Tag?>(null) }
+    var tagToEdit by remember { mutableStateOf<Tag?>(null) }
     var isDetailsExpanded by remember { mutableStateOf(false) }
     var showRecurrenceEndPicker by remember { mutableStateOf(false) }
+    var showDiscardConfirmDialog by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val detailsRequester = remember { BringIntoViewRequester() }
+    val recurrenceRequester = remember { BringIntoViewRequester() }
+
+    val attemptClose: () -> Unit = {
+        if (confirmDiscardChanges && hasUnsavedChanges) {
+            showDiscardConfirmDialog = true
+        } else {
+            onNavigateBack()
+        }
+    }
+
+    BackHandler { attemptClose() }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "テンプレートを作成",
+                        if (isEditMode) "テンプレートを編集" else "テンプレートを作成",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = attemptClose) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "閉じる",
@@ -118,6 +145,7 @@ fun TemplateCreateContent(
                 .padding(innerPadding)
                 .fillMaxSize()
                 .verticalScroll(scrollState)
+                .imePadding()
                 .padding(horizontal = 16.dp)
         ) {
 
@@ -163,7 +191,7 @@ fun TemplateCreateContent(
                 )
             }
 
-            // ★ 修正：終日ではない時だけ「所要時間」を表示する
+            // 終日ではない時だけ「所要時間」を表示する
             if (!templateState.isAllDay) {
                 DurationSection(
                     durationMinutes = templateState.durationMinutes,
@@ -185,7 +213,12 @@ fun TemplateCreateContent(
                 onDeleteTagRequest = { tag ->
                     tagToDelete = tag
                 },
+                onEditTagRequest = { tag ->
+                    tagToEdit = tag
+                    showTagCreateDialog = true
+                },
                 onAddTagClick = {
+                    tagToEdit = null
                     showTagCreateDialog = true
                 }
             )
@@ -223,12 +256,22 @@ fun TemplateCreateContent(
                 }
             )
 
-            ExpandableDetailsSection(
-                isExpanded = isDetailsExpanded,
-                onToggle = {
-                    isDetailsExpanded = !isDetailsExpanded
-                }
+            Box(
+                modifier = Modifier.bringIntoViewRequester(detailsRequester)
             ) {
+                ExpandableDetailsSection(
+                    isExpanded = isDetailsExpanded,
+                    onToggle = {
+                        val expanding = !isDetailsExpanded
+                        isDetailsExpanded = expanding
+                        if (expanding) {
+                            coroutineScope.launch {
+                                delay(300)
+                                detailsRequester.bringIntoView()
+                            }
+                        }
+                    }
+                ) {
 
                 ChecklistSection(
                     checkList = templateState.checkList,
@@ -239,7 +282,7 @@ fun TemplateCreateContent(
 
                 ReminderSection(
                     reminderSetting = templateState.reminderSetting,
-                    isAllDay = templateState.isAllDay, // ★ 修正：固定のfalseから変更
+                    isAllDay = templateState.isAllDay, // 固定のfalseから変更
                     onReminderSettingChange = { setting ->
                         onUpdateInput { it.copy(reminderSetting = setting) }
                     }
@@ -255,16 +298,26 @@ fun TemplateCreateContent(
                     onInfoClick = {}
                 )
 
-                RecurrenceSection(
+                Box(
+                    modifier = Modifier.bringIntoViewRequester(recurrenceRequester)
+                ) {
+                    RecurrenceSection(
                     recurrenceType = templateState.recurrenceType,
                     intervalDays = templateState.recurrenceIntervalDays,
                     nth = templateState.recurrenceNth,
                     weekday = templateState.recurrenceWeekday,
+                    weekdays = templateState.recurrenceWeekdays,
                     endDateMillis = templateState.recurrenceEndTime,
                     baseDateMillis = System.currentTimeMillis() / 1000,
                     onTypeChange = { type ->
                         onUpdateInput {
                             it.copy(recurrenceType = type)
+                        }
+                        if (type != RecurrenceType.NONE) {
+                            coroutineScope.launch {
+                                delay(300)
+                                recurrenceRequester.bringIntoView()
+                            }
                         }
                     },
                     onIntervalDaysChange = { days ->
@@ -282,10 +335,22 @@ fun TemplateCreateContent(
                             it.copy(recurrenceWeekday = weekday)
                         }
                     },
+                    onWeekdaysToggle = { day ->
+                        onUpdateInput { current ->
+                            val newSet = if (day in current.recurrenceWeekdays) {
+                                current.recurrenceWeekdays - day
+                            } else {
+                                current.recurrenceWeekdays + day
+                            }
+                            current.copy(recurrenceWeekdays = newSet)
+                        }
+                    },
                     onEndDateClick = {
                         showRecurrenceEndPicker = true
                     }
-                )
+                    )
+                }
+            }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -334,9 +399,20 @@ fun TemplateCreateContent(
     }
 
     if (showTagCreateDialog) {
+        var editCustomFields by remember(tagToEdit) { mutableStateOf<List<String>>(emptyList()) }
+        LaunchedEffect(tagToEdit) {
+            tagToEdit?.let { tag ->
+                editCustomFields = onLoadCustomFieldsForTag(tag.tagId)
+            }
+        }
+
         TagCreateDialog(
+            confirmDiscardChanges = confirmDiscardChanges,
+            existingTag = tagToEdit,
+            existingCustomFields = editCustomFields,
             onDismissRequest = {
                 showTagCreateDialog = false
+                tagToEdit = null
             },
             onTagSave = { name, iconSource, color, customFieldNames ->
 
@@ -345,19 +421,32 @@ fun TemplateCreateContent(
                     is TagIconSource.Vector -> iconSource.iconId.id
                 }
 
-                val newTag = Tag(
-                    tagId = 0L,
-                    name = name,
-                    color = color.toArgb(),
-                    icon = iconString
-                )
+                val editing = tagToEdit
+                if (editing != null) {
+                    onUpdateTag(
+                        editing.copy(
+                            name = name,
+                            color = color.toArgb(),
+                            icon = iconString
+                        ),
+                        customFieldNames
+                    )
+                } else {
+                    val newTag = Tag(
+                        tagId = 0L,
+                        name = name,
+                        color = color.toArgb(),
+                        icon = iconString
+                    )
 
-                onCreateTag(
-                    newTag,
-                    customFieldNames
-                )
+                    onCreateTag(
+                        newTag,
+                        customFieldNames
+                    )
+                }
 
                 showTagCreateDialog = false
+                tagToEdit = null
             }
         )
     }
@@ -376,6 +465,26 @@ fun TemplateCreateContent(
                     )
                 }
                 showRecurrenceEndPicker = false
+            }
+        )
+    }
+
+    if (showDiscardConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmDialog = false },
+            title = { Text("編集内容を破棄しますか？", fontWeight = FontWeight.Bold) },
+            text = { Text("このまま閉じると、入力した内容は保存されません。") },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmDialog = false }) { Text("キャンセル") }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDiscardConfirmDialog = false
+                        onNavigateBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colorScheme.error)
+                ) { Text("閉じる") }
             }
         )
     }

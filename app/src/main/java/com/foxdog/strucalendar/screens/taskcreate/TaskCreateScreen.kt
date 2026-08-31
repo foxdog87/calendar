@@ -9,13 +9,13 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -35,11 +35,10 @@ import com.foxdog.strucalendar.viewmodel.TaskCreateViewModel
 fun TaskCreateScreen(
     viewModel: TaskCreateViewModel,
     onNavigateBack: () -> Unit,
+    onNotificationPermissionNeeded: () -> Unit = {},
     onNavigateToTemplateCreate: () -> Unit,
     onNavigateToTemplateEdit: (Long) -> Unit
 ) {
-    BackHandler { onNavigateBack() }
-
     val context = LocalContext.current
     val activity = context as ComponentActivity
 
@@ -132,13 +131,18 @@ fun TaskCreateScreen(
         }
     }
 
+    // 画面を開いたタイミングでだけ「最近使用したテンプレート」の順番を更新する。
+    LaunchedEffect(Unit) {
+        viewModel.refreshRecentTemplates()
+    }
+
     val availableTags by viewModel.allTags.collectAsState()
     val templates by viewModel.templates.collectAsState()
     val recentTemplates by viewModel.recentTemplates.collectAsState()
     val osmSearchResults = viewModel.osmSearchResults
     val isOsmSearching = viewModel.isOsmSearching
 
-    // ★ 追加：予定作成画面のオンボーディング表示可否
+    // 予定作成画面のオンボーディング表示可否
     val settings by viewModel.settings.collectAsState()
     val showOnboarding = !settings.taskCreateOnboardingCompleted
 
@@ -146,9 +150,12 @@ fun TaskCreateScreen(
         taskState = viewModel.inputState,
         availableTags = availableTags,
         templates = templates,
-        recentTemplates = recentTemplates, // ★ 追加
+        recentTemplates = recentTemplates,
         isTitleError = viewModel.isTitleError,
+        isEditMode = viewModel.isEditMode,
         isDateTimeError = viewModel.isDateTimeError,
+        isSaving = viewModel.isSaving,
+        onNotificationPermissionNeeded = onNotificationPermissionNeeded,
         onNavigateBack = onNavigateBack,
         onSaveTask = { viewModel.saveTask(context = context, onSuccess = onNavigateBack) },
         onUpdateInput = { update -> viewModel.updateInput(update) },
@@ -160,6 +167,13 @@ fun TaskCreateScreen(
                 customFieldNames = customFieldNames
             )
         },
+        onUpdateTag = { tag, customFieldNames ->
+            viewModel.updateTag(
+                tag = tag,
+                customFieldNames = customFieldNames
+            )
+        },
+        onLoadCustomFieldsForTag = { tagId -> viewModel.getCustomFieldNamesForTag(tagId) },
         onApplyTemplate = { template -> viewModel.applyTemplate(template) },
         onUpdateTagOrder = { tags -> viewModel.updateTagOrder(tags) },
         onUpdateTemplateOrder = { templates -> viewModel.updateTemplateOrder(templates) },
@@ -177,6 +191,10 @@ fun TaskCreateScreen(
         showOnboarding = showOnboarding,
         onOnboardingFinished = { viewModel.completeTaskCreateOnboarding() },
         alwaysShowDetailedSettings = settings.alwaysShowDetailedTaskSettings,
+        showAllTutorialsCompletedDialog = viewModel.showAllTutorialsCompletedDialog,
+        onDismissAllTutorialsCompletedDialog = { viewModel.dismissAllTutorialsCompletedDialog() },
+        hasUnsavedChanges = viewModel.hasUnsavedChanges,
+        confirmDiscardChanges = settings.confirmDiscardChanges,
 
     )
 

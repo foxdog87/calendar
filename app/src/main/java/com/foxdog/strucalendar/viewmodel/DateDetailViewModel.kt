@@ -18,13 +18,13 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 class DateDetailViewModel(
     private val taskDao: TaskDao,
     private val holidayDao: HolidayDao,
-    private val settingsRepository: SettingsRepository, // ★ 追加
-    private val deviceCountryCode: String // ★ 変更：端末ロケールから判定した国コード。設定で上書きされていない場合のフォールバック
+    private val settingsRepository: SettingsRepository,
+    private val deviceCountryCode: String // 端末ロケールから判定した国コード。設定で上書きされていない場合のフォールバック
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow<LocalDate>(LocalDate.now())
@@ -33,11 +33,16 @@ class DateDetailViewModel(
     val filteredTasks: StateFlow<List<TaskWithTags>> = taskDao.getAllTasksWithTags()
         .combine(_selectedDate) { totalList, date ->
             totalList.filter { item ->
-                val taskDate = LocalDateTime.ofInstant(
+                val startDate = LocalDateTime.ofInstant(
                     Instant.ofEpochSecond(item.task.startTime),
-                    ZoneOffset.UTC
+                    ZoneId.systemDefault()
                 ).toLocalDate()
-                taskDate == date
+                val endDate = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(item.task.endTime),
+                    ZoneId.systemDefault()
+                ).toLocalDate()
+                val normalizedEndDate = if (endDate.isBefore(startDate)) startDate else endDate
+                !date.isBefore(startDate) && !date.isAfter(normalizedEndDate)
             }
         }
         .stateIn(
@@ -55,7 +60,7 @@ class DateDetailViewModel(
         AnalyticsLogger.logDateDetailOpened()
 
         // 日付が変わるたびにその日の祝日名をDBキャッシュから引く（API通信はしない）
-        // ★ 変更：設定で祝日の国が明示的に選ばれていればそちらを優先し、なければ端末ロケール判定に従う
+        // 設定で祝日の国が明示的に選ばれていればそちらを優先し、なければ端末ロケール判定に従う
         viewModelScope.launch {
             val overrideCode = settingsRepository.settingsFlow.map { it.holidayCountryCode }.first()
             val effectiveCode = overrideCode ?: deviceCountryCode

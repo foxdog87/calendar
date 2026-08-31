@@ -37,6 +37,7 @@ import com.foxdog.strucalendar.notification.getReminderSetting
 import com.foxdog.strucalendar.state.TaskInputState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -71,8 +72,20 @@ class TaskCreateViewModel(
     var isDateTimeError by mutableStateOf(false)
         private set
 
+    // 保存処理中の連打を防止する。テンプレート保存と同じく状態でガードする。
+    var isSaving by mutableStateOf(false)
+        private set
+
     private var editTaskId: Long? = null
     private var currentCompleteState = "UNCOMPLETED"
+    private var currentRecurrenceGroupId: String? = null
+    private var initialInputStateSnapshot: TaskInputState? = null
+
+    val isEditMode: Boolean
+        get() = editTaskId != null
+
+    val hasUnsavedChanges: Boolean
+        get() = initialInputStateSnapshot != null && initialInputStateSnapshot != inputState
 
     var osmSearchResults by mutableStateOf<List<OsmPoi>>(emptyList())
         private set
@@ -127,6 +140,8 @@ class TaskCreateViewModel(
 
     fun prepareCreateTask(selectedDate: LocalDate) {
         editTaskId = null
+        currentCompleteState = "UNCOMPLETED"
+        currentRecurrenceGroupId = null
 
         val now = LocalDateTime.now()
 
@@ -185,6 +200,7 @@ class TaskCreateViewModel(
                         ReminderSetting.None
                     }
             )
+            initialInputStateSnapshot = inputState
         }
     }
 
@@ -218,6 +234,18 @@ class TaskCreateViewModel(
 
             currentCompleteState =
                 task.completeState
+
+            currentRecurrenceGroupId =
+                task.recurrenceGroupId
+
+            val loadedRecurrenceType =
+                try {
+                    task.recurrenceType?.let {
+                        RecurrenceType.valueOf(it)
+                    } ?: RecurrenceType.NONE
+                } catch (e: IllegalArgumentException) {
+                    RecurrenceType.NONE
+                }
 
             inputState = TaskInputState(
                 title = task.title,
@@ -262,8 +290,31 @@ class TaskCreateViewModel(
                     taskWithTags.tags,
 
                 isAllDay =
-                    task.isAllDay
+                    task.isAllDay,
+
+                recurrenceType =
+                    loadedRecurrenceType,
+
+                recurrenceIntervalDays =
+                    task.recurrenceIntervalDays ?: 1,
+
+                recurrenceNth =
+                    task.recurrenceNth ?: 1,
+
+                recurrenceWeekday =
+                    task.recurrenceWeekday ?: 1,
+
+                recurrenceWeekdays =
+                    task.recurrenceWeekdays
+                        ?.split(",")
+                        ?.mapNotNull { it.trim().toIntOrNull() }
+                        ?.toSet()
+                        ?: emptySet(),
+
+                recurrenceEndTime =
+                    task.recurrenceEndDate
             )
+            initialInputStateSnapshot = inputState
         }
     }
 
@@ -323,6 +374,8 @@ class TaskCreateViewModel(
         context: Context,
         onSuccess: () -> Unit
     ) {
+        if (isSaving) return
+
         if (inputState.title.trim().isBlank()) {
             isTitleError = true
             return
@@ -330,19 +383,32 @@ class TaskCreateViewModel(
 
         isTitleError = false
 
-        if (
-            !inputState.isAllDay &&
-            inputState.endTime <= inputState.startTime
-        ) {
+        val isInvalidRange =
+            if (inputState.isAllDay) {
+                val startDate =
+                    Instant.ofEpochSecond(inputState.startTime)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate()
+                val endDate =
+                    Instant.ofEpochSecond(inputState.endTime)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate()
+                endDate.isBefore(startDate)
+            } else {
+                inputState.endTime <= inputState.startTime
+            }
+
+        if (isInvalidRange) {
             isDateTimeError = true
             return
         }
 
         isDateTimeError = false
+        isSaving = true
 
         viewModelScope.launch {
-
-            val notificationEnabled =
+            try {
+                val notificationEnabled =
                 settingsRepository.settingsFlow
                     .first()
                     .isNotificationEnabled
@@ -352,21 +418,28 @@ class TaskCreateViewModel(
 
             if (inputState.isAllDay) {
 
-                val localDate =
+                val startLocalDate =
                     Instant.ofEpochSecond(
                         inputState.startTime
                     )
                         .atZone(ZoneId.systemDefault())
                         .toLocalDate()
 
+                val endLocalDate =
+                    Instant.ofEpochSecond(
+                        inputState.endTime
+                    )
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate()
+
                 finalStartTime =
-                    localDate
+                    startLocalDate
                         .atTime(0, 0)
                         .atZone(ZoneId.systemDefault())
                         .toEpochSecond()
 
                 finalEndTime =
-                    localDate
+                    endLocalDate
                         .atTime(23, 59, 59)
                         .atZone(ZoneId.systemDefault())
                         .toEpochSecond()
@@ -453,6 +526,8 @@ class TaskCreateViewModel(
                             inputState.recurrenceNth,
                         weekday =
                             inputState.recurrenceWeekday,
+                        weekdays =
+                            inputState.recurrenceWeekdays,
                         endDate = endDate
                     )
 
@@ -606,6 +681,19 @@ class TaskCreateViewModel(
                                     null
                                 },
 
+                            recurrenceWeekdays =
+                                if (
+                                    inputState.recurrenceType ==
+                                    RecurrenceType.WEEKLY_ON_DAYS &&
+                                    inputState.recurrenceWeekdays.isNotEmpty()
+                                ) {
+                                    inputState.recurrenceWeekdays
+                                        .sorted()
+                                        .joinToString(",")
+                                } else {
+                                    null
+                                },
+
                             recurrenceEndDate =
                                 endDate
                                     .atStartOfDay(
@@ -718,7 +806,50 @@ class TaskCreateViewModel(
                             rHour as Int?,
 
                         reminderMinute =
-                            rMin as Int?
+                            rMin as Int?,
+
+                        recurrenceGroupId =
+                            currentRecurrenceGroupId,
+
+                        recurrenceType =
+                            if (inputState.recurrenceType == RecurrenceType.NONE) {
+                                null
+                            } else {
+                                inputState.recurrenceType.name
+                            },
+
+                        recurrenceIntervalDays =
+                            if (inputState.recurrenceType == RecurrenceType.INTERVAL_DAYS) {
+                                inputState.recurrenceIntervalDays
+                            } else {
+                                null
+                            },
+
+                        recurrenceNth =
+                            if (inputState.recurrenceType == RecurrenceType.MONTHLY_NTH_WEEKDAY) {
+                                inputState.recurrenceNth
+                            } else {
+                                null
+                            },
+
+                        recurrenceWeekday =
+                            if (inputState.recurrenceType == RecurrenceType.MONTHLY_NTH_WEEKDAY) {
+                                inputState.recurrenceWeekday
+                            } else {
+                                null
+                            },
+
+                        recurrenceWeekdays =
+                            if (inputState.recurrenceType == RecurrenceType.WEEKLY_ON_DAYS &&
+                                inputState.recurrenceWeekdays.isNotEmpty()
+                            ) {
+                                inputState.recurrenceWeekdays.sorted().joinToString(",")
+                            } else {
+                                null
+                            },
+
+                        recurrenceEndDate =
+                            inputState.recurrenceEndTime
                     )
 
                 if (editTaskId == null) {
@@ -731,7 +862,7 @@ class TaskCreateViewModel(
                                 checklistItems = inputState.checkList
                             )
 
-                    // ★ 新規タスクのカスタム項目を保存
+                    // 新規タスクのカスタム項目を保存
                     taskCustomFieldValueDao.upsertAll(
                         inputState.customFieldValues
                             .filterValues {
@@ -808,8 +939,19 @@ class TaskCreateViewModel(
                 }
             }
 
+            initialInputStateSnapshot = inputState
+
+            // 成功時は、画面遷移を開始するまで isSaving = true を維持する。
+            // 先に false にすると、popBackStack() が完了するまでの一瞬に
+            // 保存ボタンが再び有効になり、2回目の保存が走る可能性がある。
+            // 成功後はこの画面を離れるため、ここでは false に戻さない。
             withContext(Dispatchers.Main) {
                 onSuccess()
+            }
+            } catch (e: Exception) {
+                // 保存に失敗した場合だけ再試行できるようにする。
+                isSaving = false
+                throw e
             }
         }
     }
@@ -865,6 +1007,47 @@ class TaskCreateViewModel(
             } finally {
                 isOsmSearching = false
             }
+        }
+    }
+
+    suspend fun getCustomFieldNamesForTag(tagId: Long): List<String> {
+        return tagCustomFieldDao.getByTagId(tagId).map { it.fieldName }
+    }
+
+    fun updateTag(
+        tag: Tag,
+        customFieldNames: List<String>
+    ) {
+        viewModelScope.launch {
+
+            tagRepository.updateTagWithCustomFields(
+                tag = tag,
+                customFieldNames = customFieldNames
+            )
+
+            // selectedTags 内の同一タグ情報も更新し、customFields/customFieldValuesを再取得する
+            val currentSelected =
+                inputState.selectedTags.map {
+                    if (it.tagId == tag.tagId) tag else it
+                }
+
+            val refreshedFields =
+                tagCustomFieldDao.getByTagIds(
+                    currentSelected.map { it.tagId }
+                )
+
+            val fieldIds =
+                refreshedFields.map { it.fieldId }.toSet()
+
+            inputState =
+                inputState.copy(
+                    selectedTags = currentSelected,
+                    customFields = refreshedFields,
+                    customFieldValues =
+                        inputState.customFieldValues.filterKeys { it in fieldIds }
+                )
+
+            AnalyticsLogger.logTagUpdated()
         }
     }
 
@@ -965,16 +1148,19 @@ class TaskCreateViewModel(
         }
     }
 
-    val recentTemplates: StateFlow<List<Template>> =
-        templateRepository
-            .getRecentTemplates(limit = 3)
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
+    // 「最近使用したテンプレート」は、テンプレート適用直後には表示順を変えず、
+    // タスク作成画面を開いたタイミングで最新の使用順を反映する。
+    private val _recentTemplates = MutableStateFlow<List<Template>>(emptyList())
+    val recentTemplates: StateFlow<List<Template>> = _recentTemplates
 
-    // ★ 追加：予定作成画面のオンボーディング表示可否を判定するために使う
+    fun refreshRecentTemplates() {
+        viewModelScope.launch {
+            _recentTemplates.value =
+                templateRepository.getRecentTemplates(limit = 3).first()
+        }
+    }
+
+    // 予定作成画面のオンボーディング表示可否を判定するために使う
     val settings: StateFlow<AppSettings> = settingsRepository.settingsFlow
         .stateIn(
             scope = viewModelScope,
@@ -982,10 +1168,20 @@ class TaskCreateViewModel(
             initialValue = AppSettings()
         )
 
-    // ★ 追加：オンボーディングを最後まで見た／スキップした際に完了フラグを保存する
+    // オンボーディングを最後まで見た／スキップした際に完了フラグを保存する
+    var showAllTutorialsCompletedDialog by mutableStateOf(false)
+        private set
+
+    fun dismissAllTutorialsCompletedDialog() {
+        showAllTutorialsCompletedDialog = false
+    }
+
     fun completeTaskCreateOnboarding() {
         viewModelScope.launch {
             settingsRepository.setTaskCreateOnboardingCompleted(true)
+            if (settingsRepository.areAllOnboardingsCompleted()) {
+                showAllTutorialsCompletedDialog = true
+            }
         }
     }
 
@@ -1014,7 +1210,7 @@ class TaskCreateViewModel(
                 )
 
             val (startEpoch, _) =
-                createDefaultDateTimePair()
+                createDateTimePairKeepingDate(inputState.startTime)
 
             val endEpoch =
                 startEpoch + template.timeLength
@@ -1072,6 +1268,12 @@ class TaskCreateViewModel(
                         template.recurrenceNth ?: 1,
                     recurrenceWeekday =
                         template.recurrenceWeekday ?: 1,
+                    recurrenceWeekdays =
+                        template.recurrenceWeekdays
+                            ?.split(",")
+                            ?.mapNotNull { it.trim().toIntOrNull() }
+                            ?.toSet()
+                            ?: emptySet(),
                     recurrenceEndTime =
                         template.recurrenceEndDate
                 )
@@ -1118,6 +1320,46 @@ class TaskCreateViewModel(
                 .atZone(
                     ZoneId.systemDefault()
                 )
+                .toEpochSecond()
+        )
+    }
+
+    /**
+     * createDefaultDateTimePair()と異なり、日付部分は baseDateEpoch
+     * （通常は inputState.startTime、カレンダー画面で選択中の日付）から取得し、
+     * 時刻部分のみ「次の正時」で算出する。テンプレート適用時に選択中の日付が
+     * 現在時刻の日付にリセットされてしまう不具合の修正用。
+     */
+    private fun createDateTimePairKeepingDate(baseDateEpoch: Long): Pair<Long, Long> {
+
+        val baseDate =
+            Instant.ofEpochSecond(baseDateEpoch)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+
+        val now =
+            LocalDateTime.now()
+
+        val nextHour =
+            if (now.minute > 0) {
+                now.plusHours(1).hour
+            } else {
+                now.hour
+            }
+
+        val startDateTime =
+            baseDate.atTime(nextHour, 0)
+
+        val endDateTime =
+            startDateTime.plusHours(1)
+
+        return Pair(
+            startDateTime
+                .atZone(ZoneId.systemDefault())
+                .toEpochSecond(),
+
+            endDateTime
+                .atZone(ZoneId.systemDefault())
                 .toEpochSecond()
         )
     }

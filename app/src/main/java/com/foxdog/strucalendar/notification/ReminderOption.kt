@@ -1,6 +1,6 @@
 package com.foxdog.strucalendar.notification
 
-// ★ UI表示用の「選択肢」モデル
+// UI表示用の「選択肢」モデル
 sealed class ReminderOption(val label: String) {
     data object None : ReminderOption("なし")
     data object AtStartTime : ReminderOption("開始時間")

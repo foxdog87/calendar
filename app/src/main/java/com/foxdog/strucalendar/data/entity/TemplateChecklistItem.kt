@@ -27,7 +27,7 @@ data class TemplateChecklistItem(
 
     val text: String,
 
-    val isChecked: Boolean = false, // ★ 追加：チェック状態を保存できるようにする
+    val isChecked: Boolean = false, // チェック状態を保存できるようにする
 
     val position: Int
 )

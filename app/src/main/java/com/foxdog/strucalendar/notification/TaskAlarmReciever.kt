@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class TaskAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -25,55 +26,57 @@ class TaskAlarmReceiver : BroadcastReceiver() {
         val taskId = intent.getLongExtra("TASK_ID", -1L)
         if (taskId == -1L) return
 
-        // データベースから最新のタスク情報を取得しつつ、通知の全体設定も同じブロックで確認する
-        val (isNotificationEnabled, task) = runBlocking {
-            val settingsRepository = SettingsRepository(context.applicationContext)
-            val enabled = settingsRepository.settingsFlow.first().isNotificationEnabled
+        val appContext = context.applicationContext
+        val pendingResult = goAsync()
 
-            val fetchedTask: Task? = AppDatabase
-                .getDatabase(
-                    context.applicationContext,
-                    CoroutineScope(Dispatchers.IO)
-                )
-                .taskDao()
-                .getTaskById(taskId)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val settingsRepository = SettingsRepository(appContext)
+                val isNotificationEnabled = settingsRepository.settingsFlow.first().isNotificationEnabled
 
-            enabled to fetchedTask
-        }
+                val task: Task? = AppDatabase
+                    .getDatabase(appContext, this)
+                    .taskDao()
+                    .getTaskById(taskId)
 
-        // ★ セーフティネット：AlarmManager側のキャンセルが漏れていても、
-        // 設定画面で通知が全体OFFになっていればここで確実にブロックする
-        if (!isNotificationEnabled) {
-            Log.d("ALARM_TEST", "Notification is globally disabled in settings")
-            return
-        }
+                if (!isNotificationEnabled) {
+                    Log.d("ALARM_TEST", "Notification is globally disabled in settings")
+                    return@launch
+                }
+                if (task == null) {
+                    Log.d("ALARM_TEST", "task not found")
+                    return@launch
+                }
+                if (task.completeState == "COMPLETED") {
+                    Log.d("ALARM_TEST", "completed task")
+                    return@launch
+                }
 
-        if (task == null) {
-            Log.d("ALARM_TEST", "task not found")
-            return
-        }
+                val text = when (val setting = task.getReminderSetting()) {
+                    is ReminderSetting.None -> {
+                        Log.d("ALARM_TEST", "Notification is disabled in DB")
+                        return@launch
+                    }
+                    is ReminderSetting.AtStartTime -> "開始時間になりました"
+                    is ReminderSetting.Before -> "開始の${setting.minutes}分前です"
+                    is ReminderSetting.DayBefore -> "明日の予定です"
+                }
 
-        if (task.completeState == "COMPLETED") {
-            Log.d("ALARM_TEST", "completed task")
-            return
-        }
+                // 通知の発行はUI操作を含まないためバックグラウンドスレッドのままでOK
+                showNotification(appContext, taskId, task, text)
 
-        // ★ 新しい通知設定モデル (Domain) を取得し、通知テキストを生成
-        val text = when (val setting = task.getReminderSetting()) {
-            is ReminderSetting.None -> {
-                // 万が一アラームのキャンセルが漏れていても、設定がOFFならここでブロックする（安全装置）
-                Log.d("ALARM_TEST", "Notification is disabled in DB")
-                return
+            } catch (e: Exception) {
+                Log.e("ALARM_TEST", "通知処理失敗", e)
+            } finally {
+                pendingResult.finish()
             }
-            is ReminderSetting.AtStartTime -> "開始時間になりました"
-            is ReminderSetting.Before -> "開始の${setting.minutes}分前です"
-            is ReminderSetting.DayBefore -> "明日の予定です"
         }
+    }
 
+    private fun showNotification(context: Context, taskId: Long, task: Task, text: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = NotificationConstants.CHANNEL_ID
 
-        // Android 8.0以上は通知チャンネルが必須
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
@@ -100,10 +103,8 @@ class TaskAlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 通知のビルド
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification_calendar)
-            // ★ Intentからではなく、常にDBの最新のタイトルを使用する
             .setContentTitle(task.title)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -111,7 +112,6 @@ class TaskAlarmReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .build()
 
-        // 通知を発行（通知IDにtaskIdを使うことで重複を防ぐ）
         notificationManager.notify(taskId.toInt(), notification)
     }
 }

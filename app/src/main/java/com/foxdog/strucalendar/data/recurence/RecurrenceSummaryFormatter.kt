@@ -21,6 +21,15 @@ object RecurrenceSummaryFormatter {
                 val weekday = weekdayLabels[summary.recurrenceWeekday] ?: "月"
                 "毎月 ${nth}${weekday}曜日"
             }
+            "WEEKLY_ON_DAYS" -> {
+                val days = summary.recurrenceWeekdays
+                    ?.split(",")
+                    ?.mapNotNull { it.trim().toIntOrNull() }
+                    ?.sorted()
+                    ?.mapNotNull { weekdayLabels[it] }
+                    ?: emptyList()
+                if (days.isEmpty()) "毎週" else "毎週 ${days.joinToString("・")}曜日"
+            }
             else -> "繰り返し"
         }
     }

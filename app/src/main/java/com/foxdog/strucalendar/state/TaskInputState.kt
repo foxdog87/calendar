@@ -41,5 +41,6 @@ data class TaskInputState(
     val recurrenceIntervalDays: Int = 1,
     val recurrenceNth: Int = 1,
     val recurrenceWeekday: Int = 1,
+    val recurrenceWeekdays: Set<Int> = emptySet(),
     val recurrenceEndTime: Long? = null
 )

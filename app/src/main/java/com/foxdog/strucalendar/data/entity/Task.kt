@@ -41,10 +41,10 @@ data class Task(
     val reminderHour: Int? = null,
     val reminderMinute: Int? = null,
 
-    // ▼ 追加：繰り返し関連
+    // 繰り返し関連
     // recurrenceGroupId: 同じ繰り返しシリーズを識別するUUID。繰り返しなしのタスクはnull。
     val recurrenceGroupId: String? = null,
-    // recurrenceType: "INTERVAL_DAYS" または "MONTHLY_NTH_WEEKDAY"。繰り返しなしはnull。
+    // recurrenceType: "INTERVAL_DAYS" "MONTHLY_NTH_WEEKDAY" または "WEEKLY_ON_DAYS"。繰り返しなしはnull。
     val recurrenceType: String? = null,
     // X日ごと の X（type=INTERVAL_DAYSのとき使用）
     val recurrenceIntervalDays: Int? = null,
@@ -52,6 +52,8 @@ data class Task(
     val recurrenceNth: Int? = null,
     // 曜日（DayOfWeek.value: 月=1〜日=7）（type=MONTHLY_NTH_WEEKDAYのとき使用）
     val recurrenceWeekday: Int? = null,
+    // 複数曜日（カンマ区切り文字列、例"1,3,5"）（type=WEEKLY_ON_DAYSのとき使用）
+    val recurrenceWeekdays: String? = null,
     // 繰り返しの最終日（epoch秒、その日の0時などで保存）
     val recurrenceEndDate: Long? = null
 )

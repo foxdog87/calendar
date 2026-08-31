@@ -18,7 +18,6 @@ fun DurationSection(
     val hours = durationMinutes / 60
     val minutes = durationMinutes % 60
 
-    // ★ Rowを画面幅いっぱいに広げ、中央に配置するよう修正
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,

@@ -32,7 +32,7 @@ private val LightColorScheme = lightColorScheme(
     outline = Color(0xFFD8D8D8),
     outlineVariant = Color(0xFFBDBDBD),
 
-    // ★ 追加：期限切れ/エラー系はアプリの赤に合わせて上書き
+    // 期限切れ/エラー系はアプリの赤に合わせて上書き
     error = Color(0xFFD93025),
     onError = Color.White,
     errorContainer = Color(0xFFFCE8E6),
@@ -54,7 +54,7 @@ private val DarkColorScheme = darkColorScheme(
     outline = Color(0xFF3A3A3A),
     outlineVariant = Color(0xFF4A4A4A),
 
-    // ★ 追加：ライト同様、期限切れ/エラー系を明示指定
+    // ライト同様、期限切れ/エラー系を明示指定
     error = Color(0xFFF28B82),
     onError = Color(0xFF601410),
     errorContainer = Color(0xFF4A2521),
@@ -67,8 +67,8 @@ data class CalendarExtendedColors(
     val templateAccent: Color,
     val templateAccentContainer: Color,
     val success: Color,
-    val successContainer: Color,       // ★ 追加：完了バッジの背景
-    val onSuccessContainer: Color,     // ★ 追加：完了バッジの文字
+    val successContainer: Color, // 完了バッジの背景
+    val onSuccessContainer: Color, // 完了バッジの文字
 )
 
 private val LightExtendedColors = CalendarExtendedColors(
@@ -114,7 +114,7 @@ fun CalendarTheme(
         else -> LightColorScheme
     }
 
-    // ★ dynamicColorがONだと端末の壁紙色でsunday/selectedDateBackgroundまで
+    // dynamicColorがONだと端末の壁紙色でsunday/selectedDateBackgroundまで
     //   変わってしまい違和感が出るため、拡張カラーはdynamicColorの影響を受けず
     //   ダーク/ライトの固定値のみで切り替える
     val extendedColors = if (darkTheme) DarkExtendedColors else LightExtendedColors

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,12 +44,12 @@ fun SettingsScreen(
     var showWeekStartDialog by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
     var showOsmLicenseDialog by remember { mutableStateOf(false) }
-    var showHolidayCountryDialog by remember { mutableStateOf(false) } // ★ 追加（他のvar remember群と並べて宣言）
+    var showHolidayCountryDialog by remember { mutableStateOf(false) } // （他のvar remember群と並べて宣言）
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("設定", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colorScheme.onSurface) },
+                title = { Text("設定", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colorScheme.onSurface, maxLines = 1, softWrap = false) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, tint = colorScheme.onSurface, contentDescription = "戻る")
@@ -60,7 +61,7 @@ fun SettingsScreen(
                         contentDescription = "Strucalendar",
                         modifier = Modifier
                             .padding(end = 12.dp)
-                            .height(40.dp)
+                            .height(32.dp)
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colorScheme.surface)
@@ -136,7 +137,69 @@ fun SettingsScreen(
             }
 
             // ------------------------------------------------------
-            // 【3】表示設定
+            // 【3】チュートリアル
+            // ------------------------------------------------------
+            SettingSectionTitle("チュートリアル")
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = colorScheme.surface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                var onboardingResetFeedback by remember { mutableStateOf(false) }
+
+                LaunchedEffect(onboardingResetFeedback) {
+                    if (onboardingResetFeedback) {
+                        kotlinx.coroutines.delay(2000)
+                        onboardingResetFeedback = false
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.resetTutorialGuides() // resetCalendarOnboarding() から差し替え
+                            onboardingResetFeedback = true
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Replay,
+                            contentDescription = null,
+                            tint = colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "チュートリアルガイドを再度有効にする",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colorScheme.primary
+                        )
+                    }
+                    if (onboardingResetFeedback) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "有効にしました",
+                            tint = colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // ------------------------------------------------------
+            // 【4】表示設定
             // ------------------------------------------------------
             SettingSectionTitle("表示設定")
             Card(
@@ -176,7 +239,7 @@ fun SettingsScreen(
                         checked = settings.showWeekNumber
                     ) { viewModel.setShowWeekNumber(it) }
 
-                    // ★ 追加：祝日の対象国
+                    // 祝日の対象国
                     HorizontalDivider(color = colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
 
                     ClickableSettingRow(
@@ -193,53 +256,20 @@ fun SettingsScreen(
                         checked = settings.confirmBeforeDeleteTask
                     ) { viewModel.setConfirmBeforeDeleteTask(it) }
 
-                    // ★ 変更：チュートリアルガイドの再表示（2秒間だけチェックマークでフィードバック）
                     HorizontalDivider(color = colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
 
-                    var onboardingResetFeedback by remember { mutableStateOf(false) }
-
-                    LaunchedEffect(onboardingResetFeedback) {
-                        if (onboardingResetFeedback) {
-                            kotlinx.coroutines.delay(2000)
-                            onboardingResetFeedback = false
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                viewModel.resetTutorialGuides() // ★ 変更：resetCalendarOnboarding() から差し替え
-                                onboardingResetFeedback = true
-                            }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(text = "チュートリアルガイドを再度有効にする", fontSize = 15.sp, color = colorScheme.onSurface)
-                        if (onboardingResetFeedback) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "有効にしました",
-                                tint = colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                    SwitchSettingRow(
+                        title = "保存前に閉じたら確認する",
+                        subtitle = "予定・テンプレート・タグの作成/編集中に×で閉じたとき、\n保存されない旨の確認ダイアログを表示します",
+                        checked = settings.confirmDiscardChanges
+                    ) { viewModel.setConfirmDiscardChanges(it) }
                 }
             }
 
 
 
             // ------------------------------------------------------
-            // 【4】今後対応予定(現時点では未実装)
+            // 【5】今後対応予定(現時点では未実装)
             // ------------------------------------------------------
             SettingSectionTitle("その他")
             Card(
@@ -263,7 +293,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
             // ------------------------------------------------------
-            // 【5】ライセンス情報
+            // 【6】ライセンス情報
             // ------------------------------------------------------
             SettingSectionTitle("ライセンス情報")
             Card(

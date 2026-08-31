@@ -14,7 +14,7 @@ class HolidayRepository(
      * 指定年・指定国の祝日を Map<日付, 祝日名> で返す。
      * DBにキャッシュがあればそれを使い、無ければAPIから取得してDBに保存する。
      *
-     * ★ 変更：以前は固定の国リスト（JP, US, GB, DE）を全てマージして返していたが、
+     * 変更：以前は固定の国リスト（JP, US, GB, DE）を全てマージして返していたが、
      * それだと他国の祝日まで表示されてしまうため、呼び出し元（端末のロケール）から
      * 渡された countryCode 1件だけを対象にするよう変更。
      * Nager.Date API が対応している国コード（ISO 3166-1 alpha-2）であれば、
@@ -45,7 +45,7 @@ class HolidayRepository(
 
     /**
      * 指定日・指定国の祝日名を取得する（DBキャッシュのみを参照、API通信はしない）。
-     * ★ 変更：以前は該当国が見つからなければ他国の祝日名にフォールバックしていたが、
+     * 変更：以前は該当国が見つからなければ他国の祝日名にフォールバックしていたが、
      * それが「他国の祝日が出てしまう」原因だったため、指定国のみに限定する。
      */
     suspend fun getHolidayName(date: LocalDate, countryCode: String): String? = withContext(Dispatchers.IO) {

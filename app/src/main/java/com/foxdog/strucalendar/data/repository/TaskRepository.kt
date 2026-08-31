@@ -147,6 +147,10 @@ class TaskRepository(
         return taskDao.getTaskIdsBefore(beforeEpoch, targetStates).size
     }
 
+    suspend fun autoCompleteExpiredTasks() {
+        taskDao.autoCompleteExpiredTasks(System.currentTimeMillis() / 1000)
+    }
+
     suspend fun deleteOldTasks(beforeEpoch: Long?, targetStates: List<String>): Int {
         val taskIds = taskDao.getTaskIdsBefore(beforeEpoch, targetStates)
         if (taskIds.isEmpty()) return 0
@@ -162,10 +166,10 @@ class TaskRepository(
         taskDao.setPinned(taskId, isPinned)
     }
 
-    // ★ 追加：繰り返しシリーズ一覧の取得
+    // 繰り返しシリーズ一覧の取得
     suspend fun getRecurrenceSeriesSummaries() = taskDao.getRecurrenceSeriesSummaries()
 
-    // ★ 追加：選択した繰り返しシリーズをまとめて削除（タグ・チェックリストも連動削除）
+    // 選択した繰り返しシリーズをまとめて削除（タグ・チェックリストも連動削除）
     suspend fun deleteRecurrenceSeries(groupIds: List<String>): Int {
         if (groupIds.isEmpty()) return 0
 

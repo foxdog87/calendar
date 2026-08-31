@@ -39,7 +39,7 @@ class TaskDetailViewModel(
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
-    // ★ 追加：削除確認ダイアログの表示可否を画面側で参照するため
+    // 削除確認ダイアログの表示可否を画面側で参照するため
     val settings: StateFlow<AppSettings> = settingsRepository.settingsFlow
         .stateIn(
             scope = viewModelScope,
@@ -123,7 +123,7 @@ class TaskDetailViewModel(
 
         val newStatus =
             if (currentTask.completeState == "COMPLETED") {
-                "UNCOMPLETED" // ★ 修正：INCOMPLETE → UNCOMPLETED（他画面と統一）
+                "UNCOMPLETED" // INCOMPLETE → UNCOMPLETED（他画面と統一）
             } else {
                 "COMPLETED"
             }

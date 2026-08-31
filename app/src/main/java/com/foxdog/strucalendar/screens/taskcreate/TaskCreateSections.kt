@@ -60,7 +60,7 @@ fun SectionLabel(text: String) {
         fontSize = 13.sp,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp) // ★ 8.dp/6.dp から削る
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp) // 8.dp/6.dp から削る
     )
 }
 
@@ -69,7 +69,7 @@ fun SectionLabelWithIcon(text: String, icon: ImageVector) {
     val colorScheme = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp) // ★ 8.dp/6.dp から削る
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp) // 8.dp/6.dp から削る
     ) {
         Icon(
             imageVector = icon,
@@ -149,36 +149,58 @@ fun WireframeDetailTextField(
 fun TimeDisplayBox(
     dateTimeMillis: Long,
     isAllDay: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onTimeClick: (() -> Unit)? = null
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val localDateTime = remember(dateTimeMillis) {
         LocalDateTime.ofInstant(Instant.ofEpochSecond(dateTimeMillis), ZoneId.systemDefault())
     }
 
-    val formatter = remember(isAllDay) {
-        if (isAllDay) {
-            DateTimeFormatter.ofPattern("yyyy/MM/dd (E)", Locale.JAPANESE)
-        } else {
-            DateTimeFormatter.ofPattern("yyyy/MM/dd (E) HH:mm", Locale.JAPANESE)
-        }
-    }
+    // 日付と時刻を1行の文字列に連結せず、別々のフォーマッタに分ける。
+    // 半分幅のカード内で"yyyy/MM/dd (E) HH:mm"を1行(maxLines=1)表示すると、
+    // 実機（Pixel 7など）のフォント計量がエミュレーターと異なる場合に
+    // 末尾のHH:mm部分だけが幅からはみ出して見えなくなることがあったため。
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("yyyy/MM/dd (E)", Locale.JAPANESE) }
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm", Locale.JAPANESE) }
 
     OutlinedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, colorScheme.outline),
         colors = CardDefaults.outlinedCardColors(containerColor = colorScheme.surface)
     ) {
-        Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Text(localDateTime.format(formatter), fontSize = 13.sp, color = colorScheme.onSurface, maxLines = 1)
+        Column {
+            Text(
+                text = localDateTime.format(dateFormatter),
+                fontSize = 13.sp,
+                color = colorScheme.onSurface,
+                maxLines = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick() }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+            if (!isAllDay) {
+                HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.4f))
+                Text(
+                    text = localDateTime.format(timeFormatter),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { (onTimeClick ?: onClick)() }
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
+
 fun DetailRowItem(
     icon: ImageVector,
     label: String,
@@ -322,7 +344,7 @@ fun AllDayToggleRow(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 0.dp), // ★ vertical=2.dpから0.dpへ
+        modifier = Modifier.fillMaxWidth().padding(vertical = 0.dp), // vertical=2.dpから0.dpへ
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -350,18 +372,27 @@ fun TimeSection(
     endTime: Long,
     isAllDay: Boolean,
     isDateTimeError: Boolean,
-    onTimeBoxClick: (target: String) -> Unit
+    onTimeBoxClick: (target: String) -> Unit,
+    onTimeOnlyBoxClick: (target: String) -> Unit = onTimeBoxClick
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(modifier = Modifier.weight(1f)) {
-            SectionLabel(if (isAllDay) "日付" else "開始")
-            TimeDisplayBox(dateTimeMillis = startTime, isAllDay = isAllDay, onClick = { onTimeBoxClick("START") })
+            SectionLabel(if (isAllDay) "開始日" else "開始")
+            TimeDisplayBox(
+                dateTimeMillis = startTime,
+                isAllDay = isAllDay,
+                onClick = { onTimeBoxClick("START_DATE") },
+                onTimeClick = { onTimeOnlyBoxClick("START_TIME") }
+            )
         }
-        if (!isAllDay) {
-            Column(modifier = Modifier.weight(1f)) {
-                SectionLabel("終了")
-                TimeDisplayBox(dateTimeMillis = endTime, isAllDay = isAllDay, onClick = { onTimeBoxClick("END") })
-            }
+        Column(modifier = Modifier.weight(1f)) {
+            SectionLabel(if (isAllDay) "終了日" else "終了")
+            TimeDisplayBox(
+                dateTimeMillis = endTime,
+                isAllDay = isAllDay,
+                onClick = { onTimeBoxClick("END_DATE") },
+                onTimeClick = { onTimeOnlyBoxClick("END_TIME") }
+            )
         }
     }
     if (isDateTimeError) {
@@ -386,13 +417,14 @@ fun TagSection(
     onToggleTagSelection: (Tag) -> Unit,
     onUpdateTagOrder: (List<Tag>) -> Unit,
     onDeleteTagRequest: (Tag) -> Unit,
+    onEditTagRequest: (Tag) -> Unit,
     onAddTagClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
 
     SectionLabelWithIcon("タグ", Icons.Default.Label)
     Text(
-        "選択したタグ（長押しで並び替え・削除）",
+        "選択したタグ（ドラッグで並び替え・編集・削除）",
         fontSize = 12.sp,
         color = colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(bottom = 8.dp)
@@ -454,7 +486,8 @@ fun TagSection(
                 selectedTags = selectedTags,
                 onTagClick = onToggleTagSelection,
                 onOrderChanged = onUpdateTagOrder,
-                onDeleteTagRequest = onDeleteTagRequest
+                onDeleteTagRequest = onDeleteTagRequest,
+                onEditTagRequest = onEditTagRequest
             )
 
             Row(
@@ -510,7 +543,7 @@ fun MemoSection(
         value = memo,
         onValueChange = onMemoChange,
         placeholder = "メモを入力",
-        minLines = 2 // ★ 3 から 2 に減らす
+        minLines = 2 // 3 から 2 に減らす
     )
 }
 
@@ -602,7 +635,8 @@ fun ChecklistSection(
 fun ReminderSection(
     reminderSetting: ReminderSetting,
     isAllDay: Boolean,
-    onReminderSettingChange: (ReminderSetting) -> Unit
+    onReminderSettingChange: (ReminderSetting) -> Unit,
+    onNotificationPermissionNeeded: () -> Unit = {}
 ) {
     val colorScheme = MaterialTheme.colorScheme
     var showNotificationMenu by remember { mutableStateOf(false) }
@@ -702,6 +736,9 @@ fun ReminderSection(
                             else -> ReminderSetting.Before(10)
                         }
                     )
+                    if (isChecked) {
+                        onNotificationPermissionNeeded()
+                    }
                 },
                 colors = SwitchDefaults.colors(checkedThumbColor = colorScheme.onPrimary, checkedTrackColor = colorScheme.primary),
                 modifier = Modifier.scale(0.85f)
@@ -896,12 +933,14 @@ fun RecurrenceSection(
     intervalDays: Int,
     nth: Int,
     weekday: Int, // DayOfWeek.value（月=1〜日=7）
+    weekdays: Set<Int>, // WEEKLY_ON_DAYS用（複数選択）
     endDateMillis: Long?,
     baseDateMillis: Long, // 開始日（endDate未設定時の初期値計算に使用）
     onTypeChange: (RecurrenceType) -> Unit,
     onIntervalDaysChange: (Int) -> Unit,
     onNthChange: (Int) -> Unit,
     onWeekdayChange: (Int) -> Unit,
+    onWeekdaysToggle: (Int) -> Unit,
     onEndDateClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -926,6 +965,7 @@ fun RecurrenceSection(
                 RecurrenceType.NONE -> "繰り返さない"
                 RecurrenceType.INTERVAL_DAYS -> "○日ごと"
                 RecurrenceType.MONTHLY_NTH_WEEKDAY -> "毎月 第○曜日"
+                RecurrenceType.WEEKLY_ON_DAYS -> "毎週 ○曜日"
             }
             Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
@@ -933,6 +973,7 @@ fun RecurrenceSection(
         DropdownMenu(expanded = showTypeMenu, onDismissRequest = { showTypeMenu = false }) {
             DropdownMenuItem(text = { Text("繰り返さない") }, onClick = { onTypeChange(RecurrenceType.NONE); showTypeMenu = false })
             DropdownMenuItem(text = { Text("○日ごと") }, onClick = { onTypeChange(RecurrenceType.INTERVAL_DAYS); showTypeMenu = false })
+            DropdownMenuItem(text = { Text("毎週 ○曜日") }, onClick = { onTypeChange(RecurrenceType.WEEKLY_ON_DAYS); showTypeMenu = false })
             DropdownMenuItem(text = { Text("毎月 第○曜日") }, onClick = { onTypeChange(RecurrenceType.MONTHLY_NTH_WEEKDAY); showTypeMenu = false })
         }
     }
@@ -955,6 +996,36 @@ fun RecurrenceSection(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("日ごと", fontSize = 14.sp, color = colorScheme.onSurface)
+                }
+            }
+
+            RecurrenceType.WEEKLY_ON_DAYS -> {
+                Text(
+                    "曜日を選択（複数可）",
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 表示順は月〜日
+                    listOf(1, 2, 3, 4, 5, 6, 7).forEach { dayValue ->
+                        val isSelected = dayValue in weekdays
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (isSelected) colorScheme.primary else colorScheme.surfaceVariant)
+                                .clickable { onWeekdaysToggle(dayValue) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                weekdayLabels[dayValue] ?: "",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) colorScheme.onPrimary else colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
@@ -996,7 +1067,7 @@ fun RecurrenceSection(
 
         Text("終了日", fontSize = 12.sp, color = colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
 
-        // ★ 変更：未設定時は baseDateMillis の1年後をデフォルト表示にする
+        // 未設定時は baseDateMillis の1年後をデフォルト表示にする
         val displayEndDateMillis = endDateMillis ?: run {
             val baseDate = Instant.ofEpochSecond(baseDateMillis).atZone(ZoneId.systemDefault()).toLocalDate()
             baseDate.plusYears(1).atStartOfDay(ZoneId.systemDefault()).toEpochSecond()

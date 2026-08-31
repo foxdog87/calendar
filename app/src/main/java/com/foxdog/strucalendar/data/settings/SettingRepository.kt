@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
 
@@ -25,18 +26,22 @@ class SettingsRepository(private val context: Context) {
         val AUTO_COMPLETE_OVERDUE = booleanPreferencesKey("auto_complete_overdue")
         val HOLIDAY_COUNTRY_CODE = stringPreferencesKey("holiday_country_code")
         val CONFIRM_BEFORE_DELETE_TASK = booleanPreferencesKey("confirm_before_delete_task")
+        val CONFIRM_DISCARD_CHANGES = booleanPreferencesKey("confirm_discard_changes")
 
         val CALENDAR_ONBOARDING_COMPLETED = booleanPreferencesKey("calendar_onboarding_completed")
         val TASK_CREATE_ONBOARDING_COMPLETED = booleanPreferencesKey("task_create_onboarding_completed")
         val TASK_LIST_ONBOARDING_COMPLETED = booleanPreferencesKey("task_list_onboarding_completed")
 
-        // ★ 追加：タスク作成時の詳細設定を常に表示するフラグ
+        // タスク作成時の詳細設定を常に表示するフラグ
         val ALWAYS_SHOW_DETAILED_TASK_SETTINGS = booleanPreferencesKey("always_show_detailed_task_settings")
+
+        // 週表示の選択日プレビューを時刻表レイアウトにするかどうか
+        val WEEK_DAY_PREVIEW_IS_TIMETABLE = booleanPreferencesKey("week_day_preview_is_timetable")
     }
 
     val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
-            isNotificationEnabled = prefs[Keys.NOTIFICATION_ENABLED] ?: true,
+            isNotificationEnabled = prefs[Keys.NOTIFICATION_ENABLED] ?: false,
             defaultReminderOffsetMinutes = prefs[Keys.DEFAULT_REMINDER_MINUTES] ?: 10,
             themeMode = prefs[Keys.THEME_MODE]?.let { runCatching { AppThemeMode.valueOf(it) }.getOrNull() }
                 ?: AppThemeMode.SYSTEM,
@@ -48,12 +53,15 @@ class SettingsRepository(private val context: Context) {
             autoCompleteOverdueTasks = prefs[Keys.AUTO_COMPLETE_OVERDUE] ?: false,
             holidayCountryCode = prefs[Keys.HOLIDAY_COUNTRY_CODE],
             confirmBeforeDeleteTask = prefs[Keys.CONFIRM_BEFORE_DELETE_TASK] ?: true,
+            confirmDiscardChanges = prefs[Keys.CONFIRM_DISCARD_CHANGES] ?: true,
             calendarOnboardingCompleted = prefs[Keys.CALENDAR_ONBOARDING_COMPLETED] ?: false,
             taskCreateOnboardingCompleted = prefs[Keys.TASK_CREATE_ONBOARDING_COMPLETED] ?: false,
             taskListOnboardingCompleted = prefs[Keys.TASK_LIST_ONBOARDING_COMPLETED] ?: false,
 
-            // ★ 追加：設定値の読み込み（初期値は false）
-            alwaysShowDetailedTaskSettings = prefs[Keys.ALWAYS_SHOW_DETAILED_TASK_SETTINGS] ?: false
+            // 設定値の読み込み（初期値は false）
+            alwaysShowDetailedTaskSettings = prefs[Keys.ALWAYS_SHOW_DETAILED_TASK_SETTINGS] ?: false,
+
+            weekDayPreviewIsTimetable = prefs[Keys.WEEK_DAY_PREVIEW_IS_TIMETABLE] ?: false
         )
     }
 
@@ -103,6 +111,10 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.CONFIRM_BEFORE_DELETE_TASK] = enabled }
     }
 
+    suspend fun setConfirmDiscardChanges(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.CONFIRM_DISCARD_CHANGES] = enabled }
+    }
+
     suspend fun setCalendarOnboardingCompleted(completed: Boolean) {
         context.settingsDataStore.edit { it[Keys.CALENDAR_ONBOARDING_COMPLETED] = completed }
     }
@@ -115,8 +127,19 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.TASK_LIST_ONBOARDING_COMPLETED] = completed }
     }
 
-    // ★ 追加：設定値の書き込み用関数
+    // 設定値の書き込み用関数
     suspend fun setAlwaysShowDetailedTaskSettings(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.ALWAYS_SHOW_DETAILED_TASK_SETTINGS] = enabled }
+    }
+
+    suspend fun setWeekDayPreviewIsTimetable(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.WEEK_DAY_PREVIEW_IS_TIMETABLE] = enabled }
+    }
+
+    suspend fun areAllOnboardingsCompleted(): Boolean {
+        val current = settingsFlow.first()
+        return current.calendarOnboardingCompleted &&
+                current.taskCreateOnboardingCompleted &&
+                current.taskListOnboardingCompleted
     }
 }

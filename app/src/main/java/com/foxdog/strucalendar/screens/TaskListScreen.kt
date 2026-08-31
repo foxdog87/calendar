@@ -76,7 +76,7 @@ fun TaskListScreen(
         tasksWithTags = tasksWithTags,
         dynamicTags = dynamicTags,
         defaultShowCompleted = settings.showCompletedTasks,
-        taskListOnboardingCompleted = settings.taskListOnboardingCompleted, // ★ 追加
+        taskListOnboardingCompleted = settings.taskListOnboardingCompleted,
         bulkDeletePreviewCount = viewModel.bulkDeletePreviewCount,
         isBulkDeleting = viewModel.isBulkDeleting,
         recurrenceSeries = recurrenceSeries,
@@ -94,6 +94,13 @@ fun TaskListScreen(
                 customFieldNames = customFieldNames
             )
         },
+        onUpdateTag = { tag, customFieldNames ->
+            viewModel.updateTag(
+                tag = tag,
+                customFieldNames = customFieldNames
+            )
+        },
+        onLoadCustomFieldsForTag = { tagId -> viewModel.getCustomFieldNamesForTag(tagId) },
         onUpdateTagOrder = { tags -> viewModel.updateTagOrder(tags) },
         onPreviewBulkDelete = { cutoffEpoch, includeCompleted, includeUncompleted ->
             viewModel.previewBulkDelete(cutoffEpoch, includeCompleted, includeUncompleted)
@@ -102,7 +109,10 @@ fun TaskListScreen(
         onExecuteBulkDelete = { cutoffEpoch, includeCompleted, includeUncompleted, onComplete ->
             viewModel.executeBulkDelete(cutoffEpoch, includeCompleted, includeUncompleted, onComplete)
         },
-        onOnboardingFinished = { viewModel.setTaskListOnboardingCompleted(true) } // ★ 追加
+        onOnboardingFinished = { viewModel.setTaskListOnboardingCompleted(true) },
+        showAllTutorialsCompletedDialog = viewModel.showAllTutorialsCompletedDialog,
+        onDismissAllTutorialsCompletedDialog = { viewModel.dismissAllTutorialsCompletedDialog() },
+        confirmDiscardChanges = settings.confirmDiscardChanges,
     )
 }
 
@@ -113,7 +123,7 @@ fun TaskListContent(
     tasksWithTags: List<TaskWithTags>,
     dynamicTags: List<Tag>,
     defaultShowCompleted: Boolean = false,
-    taskListOnboardingCompleted: Boolean = true, // ★ 追加（Previewとの互換のためデフォルトtrue＝出さない）
+    taskListOnboardingCompleted: Boolean = true, // （Previewとの互換のためデフォルトtrue＝出さない）
     bulkDeletePreviewCount: Int? = null,
     isBulkDeleting: Boolean = false,
     recurrenceSeries: List<RecurrenceSeriesSummary> = emptyList(),
@@ -124,11 +134,16 @@ fun TaskListContent(
     onToggleTaskCompletion: (TaskWithTags) -> Unit,
     onDeleteTag: (Tag) -> Unit,
     onCreateTag: (Tag, List<String>) -> Unit,
+    onUpdateTag: (Tag, List<String>) -> Unit = { _, _ -> },
+    onLoadCustomFieldsForTag: suspend (Long) -> List<String> = { emptyList() },
     onUpdateTagOrder: (List<Tag>) -> Unit,
     onPreviewBulkDelete: (cutoffEpoch: Long?, includeCompleted: Boolean, includeUncompleted: Boolean) -> Unit = { _, _, _ -> },
     onClearBulkDeletePreview: () -> Unit = {},
     onExecuteBulkDelete: (cutoffEpoch: Long?, includeCompleted: Boolean, includeUncompleted: Boolean, onComplete: () -> Unit) -> Unit = { _, _, _, _ -> },
-    onOnboardingFinished: () -> Unit = {} // ★ 追加
+    onOnboardingFinished: () -> Unit = {},
+    showAllTutorialsCompletedDialog: Boolean = false,
+    onDismissAllTutorialsCompletedDialog: () -> Unit = {},
+    confirmDiscardChanges: Boolean = true,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val calColors = MaterialTheme.calendarColors
@@ -139,15 +154,19 @@ fun TaskListContent(
     var showTagCreateDialog by remember { mutableStateOf(false) }
     val selectedTagIds = remember { mutableStateListOf<Long>() }
     var isAndSearch by remember { mutableStateOf(false) }
+    var taskNameQuery by remember { mutableStateOf("") }
 
     var showCompleted by remember(defaultShowCompleted) { mutableStateOf(defaultShowCompleted) }
     var tagToDelete by remember { mutableStateOf<Tag?>(null) }
+    var tagToEdit by remember { mutableStateOf<Tag?>(null) }
     var isTagFolderExpanded by remember { mutableStateOf(false) }
+    // 絞り込み条件全体の表示/非表示。初期状態は展開。
+    var isFilterPanelExpanded by remember { mutableStateOf(true) }
     val now = Instant.now().epochSecond
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var showRecurrenceDeleteDialog by remember { mutableStateOf(false) }
 
-    // ★ 追加：オンボーディング用のターゲット座標
+    // オンボーディング用のターゲット座標
     var showOnboarding by remember(taskListOnboardingCompleted) { mutableStateOf(!taskListOnboardingCompleted) }
     val onboardingTargetRects = remember { mutableStateMapOf<String, Rect>() }
 
@@ -157,12 +176,12 @@ fun TaskListContent(
         }
     }
 
-    val filteredTasks by remember(tasksWithTags, isAndSearch, selectedTagIds.toList(), showCompleted) {
+    val filteredTasks by remember(tasksWithTags, isAndSearch, selectedTagIds.toList(), showCompleted, taskNameQuery) {
         derivedStateOf {
             val baseList = if (showCompleted) tasksWithTags
             else tasksWithTags.filter { it.task.completeState != "COMPLETED" }
 
-            if (selectedTagIds.isEmpty()) {
+            val tagFiltered = if (selectedTagIds.isEmpty()) {
                 baseList
             } else {
                 baseList.filter { taskWithTags ->
@@ -174,6 +193,15 @@ fun TaskListContent(
                     }
                 }
             }
+
+            val trimmedQuery = taskNameQuery.trim()
+            if (trimmedQuery.isEmpty()) {
+                tagFiltered
+            } else {
+                tagFiltered.filter { taskWithTags ->
+                    taskWithTags.task.title.contains(trimmedQuery, ignoreCase = true)
+                }
+            }
         }
     }
 
@@ -181,11 +209,11 @@ fun TaskListContent(
     val upcomingTasks = remember(filteredTasks) { filteredTasks.filter { it.task.endTime >= now } }
     val listState = rememberLazyListState()
 
-    var hasAutoScrolledForFilter by remember(selectedTagIds.toList(), isAndSearch, showCompleted) {
+    var hasAutoScrolledForFilter by remember(selectedTagIds.toList(), isAndSearch, showCompleted, taskNameQuery) {
         mutableStateOf(false)
     }
 
-    LaunchedEffect(selectedTagIds.toList(), isAndSearch, showCompleted, tasksWithTags) {
+    LaunchedEffect(selectedTagIds.toList(), isAndSearch, showCompleted, taskNameQuery, tasksWithTags) {
         if (!hasAutoScrolledForFilter && pastTasks.isNotEmpty()) {
             listState.scrollToItem(pastTasks.size)
             hasAutoScrolledForFilter = true
@@ -219,36 +247,82 @@ fun TaskListContent(
         ) { innerPadding ->
             Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
 
-                // --- タグフィルター ＆ AND/OR 切り替え ＆ 完了済み表示バー ---
+                // --- 絞り込み条件 ---
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(colorScheme.background)
-                        .padding(vertical = 10.dp)
-                        .onGloballyPositioned { coordinates -> // ★ 追加：検索条件エリア全体をオンボーディング対象に
-                            onboardingTargetRects["search_filter_area"] = coordinates.boundsInRoot()
-                        }
+                        .padding(vertical = 6.dp)
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { coordinates ->
+                                onboardingTargetRects["search_filter_area"] = coordinates.boundsInRoot()
+                            }
+                            .clickable { isFilterPanelExpanded = !isFilterPanelExpanded }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription = null,
+                                tint = colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "絞り込み条件",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colorScheme.onSurface
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isFilterPanelExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isFilterPanelExpanded) "絞り込み条件を閉じる" else "絞り込み条件を開く",
+                            tint = colorScheme.onSurfaceVariant
+                        )
+                    }
 
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isFilterPanelExpanded) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+
+                        OutlinedTextField(
+                            value = taskNameQuery,
+                            onValueChange = { taskNameQuery = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            placeholder = { Text("タスク名で検索", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = colorScheme.onSurfaceVariant)
+                            },
+                            trailingIcon = {
+                                if (taskNameQuery.isNotEmpty()) {
+                                    IconButton(onClick = { taskNameQuery = "" }) {
+                                        Icon(Icons.Default.Close, contentDescription = "検索文字をクリア", tint = colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 14.sp),
+                            shape = RoundedCornerShape(10.dp)
+                        )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("タグで絞り込む", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable { showCompleted = !showCompleted }
-                                    .padding(vertical = 4.dp, horizontal = 4.dp)
-                            ) {
-                                Checkbox(checked = showCompleted, onCheckedChange = { showCompleted = it })
-                                Text("完了済みを含める", fontSize = 12.sp, color = colorScheme.onSurface)
-                            }
+                            Text(
+                                "(タップで選択・ドラッグで並替/編集/削除)",
+                                fontSize = 10.sp,
+                                color = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
                         }
 
                         val textMeasurer = rememberTextMeasurer()
@@ -297,7 +371,7 @@ fun TaskListContent(
                                 }
                             }
 
-                            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 DraggableTagList(
                                     tags = displayTags,
                                     allTags = dynamicTags,
@@ -310,7 +384,11 @@ fun TaskListContent(
                                         }
                                     },
                                     onOrderChanged = onUpdateTagOrder,
-                                    onDeleteTagRequest = { tagToDelete = it }
+                                    onDeleteTagRequest = { tagToDelete = it },
+                                    onEditTagRequest = { tag ->
+                                        tagToEdit = tag
+                                        showTagCreateDialog = true
+                                    }
                                 )
 
                                 Row(
@@ -324,7 +402,10 @@ fun TaskListContent(
                                             .border(BorderStroke(1.dp, colorScheme.outline), RoundedCornerShape(8.dp))
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(colorScheme.surface)
-                                            .clickable { showTagCreateDialog = true },
+                                            .clickable {
+                                                tagToEdit = null
+                                                showTagCreateDialog = true
+                                            },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = "新規タグ作成", tint = colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
@@ -342,7 +423,7 @@ fun TaskListContent(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -350,7 +431,7 @@ fun TaskListContent(
                         color = colorScheme.outline
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -372,7 +453,7 @@ fun TaskListContent(
                                     .clickable { isAndSearch = false }
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text("いずれか (OR)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (!isAndSearch) colorScheme.onSurface else colorScheme.onSurfaceVariant)
+                                Text("いずれか (OR)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, color = if (!isAndSearch) colorScheme.onSurface else colorScheme.onSurfaceVariant)
                             }
                             Box(
                                 modifier = Modifier
@@ -381,12 +462,31 @@ fun TaskListContent(
                                     .clickable { isAndSearch = true }
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text("すべて含む (AND)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isAndSearch) colorScheme.onSurface else colorScheme.onSurfaceVariant)
+                                Text("すべて含む (AND)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, color = if (isAndSearch) colorScheme.onSurface else colorScheme.onSurfaceVariant)
                             }
                         }
                     }
 
-                }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { showCompleted = !showCompleted }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = showCompleted,
+                            onCheckedChange = { showCompleted = it },
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("完了済み予定を含める", fontSize = 12.sp, color = colorScheme.onSurface)
+                    }
+
+                        }
+                    }
 
                 HorizontalDivider(
                     thickness = 1.dp,
@@ -408,7 +508,7 @@ fun TaskListContent(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 16.dp)
-                            .onGloballyPositioned { coordinates -> // ★ 追加：タスクカード説明の対象エリア
+                            .onGloballyPositioned { coordinates -> // タスクカード説明の対象エリア
                                 onboardingTargetRects["task_card_area"] = coordinates.boundsInRoot()
                             },
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -446,7 +546,7 @@ fun TaskListContent(
             }
         }
 
-        // ★ 追加：4ステップのオンボーディング
+        // 4ステップのオンボーディング
         if (showOnboarding) {
             val onboardingSteps = remember {
                 listOf(
@@ -517,24 +617,45 @@ fun TaskListContent(
     }
 
     if (showTagCreateDialog) {
+        var editCustomFields by remember(tagToEdit) { mutableStateOf<List<String>>(emptyList()) }
+        LaunchedEffect(tagToEdit) {
+            tagToEdit?.let { tag ->
+                editCustomFields = onLoadCustomFieldsForTag(tag.tagId)
+            }
+        }
+
         TagCreateDialog(
-            onDismissRequest = { showTagCreateDialog = false },
+            confirmDiscardChanges = confirmDiscardChanges,
+            existingTag = tagToEdit,
+            existingCustomFields = editCustomFields,
+            onDismissRequest = {
+                showTagCreateDialog = false
+                tagToEdit = null
+            },
             onTagSave = { name, iconSource, color, customFieldNames ->
                 val iconString = when (iconSource) {
                     is TagIconSource.InitialText -> null
                     is TagIconSource.Vector -> iconSource.iconId.id
                 }
 
-                val newTag = Tag(
-                    tagId = 0L,
-                    name = name,
-                    color = color.toArgb(),
-                    icon = iconString
-                )
-
-                onCreateTag(newTag, customFieldNames)
+                val editing = tagToEdit
+                if (editing != null) {
+                    onUpdateTag(
+                        editing.copy(name = name, color = color.toArgb(), icon = iconString),
+                        customFieldNames
+                    )
+                } else {
+                    val newTag = Tag(
+                        tagId = 0L,
+                        name = name,
+                        color = color.toArgb(),
+                        icon = iconString
+                    )
+                    onCreateTag(newTag, customFieldNames)
+                }
 
                 showTagCreateDialog = false
+                tagToEdit = null
             }
         )
     }
@@ -565,6 +686,16 @@ fun TaskListContent(
             series = recurrenceSeries,
             onExecute = { groupIds, onComplete -> onDeleteRecurrenceSeries(groupIds, onComplete) },
             onDismiss = { showRecurrenceDeleteDialog = false }
+        )
+    }
+    if (showAllTutorialsCompletedDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissAllTutorialsCompletedDialog,
+            title = { Text("すべてのチュートリアルが完了しました", fontWeight = FontWeight.Bold) },
+            text = { Text("チュートリアルを再度確認したい場合、設定画面から再度有効にすることができます。") },
+            confirmButton = {
+                TextButton(onClick = onDismissAllTutorialsCompletedDialog) { Text("OK") }
+            }
         )
     }
 }

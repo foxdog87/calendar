@@ -11,6 +11,7 @@ data class RecurrenceSeriesSummary(
     val recurrenceIntervalDays: Int?,
     val recurrenceNth: Int?,
     val recurrenceWeekday: Int?,
+    val recurrenceWeekdays: String?,
     val recurrenceEndDate: Long?,
     val occurrenceCount: Int,
     val firstStartTime: Long

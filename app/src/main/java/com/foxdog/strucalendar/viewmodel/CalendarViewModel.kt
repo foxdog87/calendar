@@ -14,6 +14,7 @@ import com.foxdog.strucalendar.data.telemetry.AnalyticsLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -26,6 +27,8 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.temporal.WeekFields
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 enum class CalendarDisplayMode {
     YEAR, MONTH, WEEK
@@ -36,7 +39,8 @@ class CalendarViewModel(
     private val calendarPreferences: CalendarPreferences,
     private val settingsRepository: SettingsRepository,
     private val holidayRepository: HolidayRepository,
-    private val deviceCountryCode: String, // ★ 変更：端末ロケールから判定した国コード。設定で上書きされていない場合のフォールバック
+    private val tagRepository: com.foxdog.strucalendar.data.repository.TagRepository,
+    private val deviceCountryCode: String, // 端末ロケールから判定した国コード。設定で上書きされていない場合のフォールバック
     initialMonth: YearMonth = YearMonth.now(),
     initialDateTime: LocalDateTime = LocalDateTime.now()
 ) : ViewModel() {
@@ -54,20 +58,153 @@ class CalendarViewModel(
 
     private fun currentWeekStartDay(): DayOfWeek = settings.value.weekStartDay
 
-    // ★ 追加：設定で明示的に選ばれた国があればそちらを優先し、なければ端末ロケール判定に従う
+    // 設定で明示的に選ばれた国があればそちらを優先し、なければ端末ロケール判定に従う
     private fun effectiveCountryCode(): String = settings.value.holidayCountryCode ?: deviceCountryCode
 
     // =================================================================
     // 1. データベース（Room）連携ロジック
     // =================================================================
 
-    val tasksByDate: StateFlow<Map<LocalDate, List<TaskWithTags>>> = taskDao.getAllTasksWithTags()
+    val allTasksByDate: StateFlow<Map<LocalDate, List<TaskWithTags>>> = taskDao.getAllTasksWithTags()
         .map { totalList ->
-            totalList.groupBy { item ->
-                LocalDateTime.ofInstant(Instant.ofEpochSecond(item.task.startTime), ZoneId.systemDefault()).toLocalDate()
+            val result = mutableMapOf<LocalDate, MutableList<TaskWithTags>>()
+
+            totalList.forEach { item ->
+                val startDate = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(item.task.startTime),
+                    ZoneId.systemDefault()
+                ).toLocalDate()
+
+                val endDate = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(item.task.endTime),
+                    ZoneId.systemDefault()
+                ).toLocalDate()
+
+                // タスクの開始日〜終了日の全ての日付にそのタスクを表示する。
+                // 極端に長い期間（データ不整合等）で無限ループ的な負荷にならないよう上限を設ける。
+                val spanDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate)
+                val cappedEndDate = if (spanDays > 366) startDate.plusDays(366) else endDate
+
+                var currentDate = startDate
+                while (!currentDate.isAfter(cappedEndDate)) {
+                    result.getOrPut(currentDate) { mutableListOf() }.add(item)
+                    currentDate = currentDate.plusDays(1)
+                }
             }
+
+            result
         }
         .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
+
+    // =================================================================
+    // 1.2. タグによる絞り込み（カレンダー画面）
+    // =================================================================
+
+    val allTags: StateFlow<List<com.foxdog.strucalendar.data.entity.Tag>> = tagRepository.getAllTags()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    private val _selectedFilterTagIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedFilterTagIds: StateFlow<Set<Long>> = _selectedFilterTagIds
+
+    private val _filterIsAndSearch = MutableStateFlow(false)
+    val filterIsAndSearch: StateFlow<Boolean> = _filterIsAndSearch
+
+    fun setFilterIsAndSearch(isAndSearch: Boolean) {
+        _filterIsAndSearch.value = isAndSearch
+    }
+
+    fun toggleFilterTag(tagId: Long) {
+        _selectedFilterTagIds.value =
+            if (tagId in _selectedFilterTagIds.value) {
+                _selectedFilterTagIds.value - tagId
+            } else {
+                _selectedFilterTagIds.value + tagId
+            }
+    }
+
+    fun resetTagFilter() {
+        _selectedFilterTagIds.value = emptySet()
+    }
+
+    fun deleteTag(tag: com.foxdog.strucalendar.data.entity.Tag) {
+        viewModelScope.launch {
+            tagRepository.deleteTag(tag)
+            com.foxdog.strucalendar.data.telemetry.AnalyticsLogger.logTagDeleted()
+        }
+    }
+
+    fun createTag(
+        tag: com.foxdog.strucalendar.data.entity.Tag,
+        customFieldNames: List<String>
+    ) {
+        viewModelScope.launch {
+            tagRepository.createTag(
+                tag = tag,
+                customFieldNames = customFieldNames
+            )
+            com.foxdog.strucalendar.data.telemetry.AnalyticsLogger.logTagCreated()
+        }
+    }
+
+    fun updateTag(
+        tag: com.foxdog.strucalendar.data.entity.Tag,
+        customFieldNames: List<String>
+    ) {
+        viewModelScope.launch {
+            tagRepository.updateTagWithCustomFields(
+                tag = tag,
+                customFieldNames = customFieldNames
+            )
+            com.foxdog.strucalendar.data.telemetry.AnalyticsLogger.logTagUpdated()
+        }
+    }
+
+    suspend fun getCustomFieldNamesForTag(tagId: Long): List<String> {
+        return tagRepository.getCustomFieldNames(tagId)
+    }
+
+    fun updateTagOrder(tags: List<com.foxdog.strucalendar.data.entity.Tag>) {
+        viewModelScope.launch {
+            tagRepository.updateTagOrder(tags)
+            com.foxdog.strucalendar.data.telemetry.AnalyticsLogger.logTagOrderChanged()
+        }
+    }
+
+    // 週表示の「選択日の予定」表示モード（リスト⇄時刻表）を切り替える
+    fun toggleWeekDayPreviewMode() {
+        viewModelScope.launch {
+            val current = settingsRepository.settingsFlow.first().weekDayPreviewIsTimetable
+            settingsRepository.setWeekDayPreviewIsTimetable(!current)
+        }
+    }
+
+    // タグ絞り込みが選択されていれば、AND/OR設定に応じて絞り込んだマップを返す
+    val tasksByDate: StateFlow<Map<LocalDate, List<TaskWithTags>>> =
+        combine(allTasksByDate, _selectedFilterTagIds, _filterIsAndSearch) { byDate, selectedIds, isAndSearch ->
+            if (selectedIds.isEmpty()) {
+                byDate
+            } else {
+                byDate
+                    .mapValues { (_, items) ->
+                        items.filter { item ->
+                            if (isAndSearch) {
+                                item.tags.map { it.tagId }.toSet().containsAll(selectedIds)
+                            } else {
+                                item.tags.any { it.tagId in selectedIds }
+                            }
+                        }
+                    }
+                    .filterValues { it.isNotEmpty() }
+            }
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyMap()
@@ -97,7 +234,7 @@ class CalendarViewModel(
         }
     }
 
-    // ★ 追加：設定画面で祝日の対象国が変更されたら、キャッシュを破棄して読み込み済みの年を新しい国で取り直す
+    // 設定画面で祝日の対象国が変更されたら、キャッシュを破棄して読み込み済みの年を新しい国で取り直す
     private fun observeHolidayCountryChanges() {
         var lastAppliedCode: String? = null
 
@@ -263,7 +400,7 @@ class CalendarViewModel(
             val savedMode = calendarPreferences.getDisplayMode()
             _displayMode.value = savedMode
 
-            // ★ 修正：祝日のプリロードより先に、実際の設定値を待つ
+            // 祝日のプリロードより先に、実際の設定値を待つ
             val initialSettings = settingsRepository.settingsFlow.first()
             val weekStartDay = initialSettings.weekStartDay
 
@@ -273,19 +410,21 @@ class CalendarViewModel(
                 CalendarDisplayMode.YEAR -> {}
             }
 
-            // ★ 修正：実際の設定値が読み込まれた後で、正しい国コードで祝日を先読みする
+            // 実際の設定値が読み込まれた後で、正しい国コードで祝日を先読みする
             val startYear = initialMonth.year
             ensureHolidaysLoaded(startYear - 1)
             ensureHolidaysLoaded(startYear)
             ensureHolidaysLoaded(startYear + 1)
 
-            // ★ 修正：先読みに実際使った国コードを基準値として明示的に渡す
+            // 先読みに実際使った国コードを基準値として明示的に渡す
             val appliedCode = initialSettings.holidayCountryCode ?: deviceCountryCode
             observeHolidayCountryChanges(appliedCode)
+
+            taskDao.autoCompleteExpiredTasks(System.currentTimeMillis() / 1000)
         }
     }
 
-    // ★ 修正：引数で初期国コードを受け取る（nullによる「初回スキップ」判定をやめる）
+    // 引数で初期国コードを受け取る（nullによる「初回スキップ」判定をやめる）
     private fun observeHolidayCountryChanges(initialCode: String) {
         var lastAppliedCode: String = initialCode
 
@@ -320,11 +459,22 @@ class CalendarViewModel(
         return date.get(WeekFields.ISO.weekOfWeekBasedYear())
     }
 
+    var showAllTutorialsCompletedDialog by mutableStateOf(false)
+        private set
+
+    fun dismissAllTutorialsCompletedDialog() {
+        showAllTutorialsCompletedDialog = false
+    }
+
     fun markCalendarOnboardingCompleted() {
         viewModelScope.launch {
             settingsRepository.setCalendarOnboardingCompleted(true)
+            if (settingsRepository.areAllOnboardingsCompleted()) {
+                showAllTutorialsCompletedDialog = true
+            }
         }
     }
+
     fun toggleTaskCompletion(item: TaskWithTags) {
         viewModelScope.launch {
             val task = item.task
